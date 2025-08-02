@@ -1,15 +1,21 @@
 import {
   createOrchestrator,
-  AgentTool,
+  OperationType,
   AIModel,
   DEFAULT_MODEL_CONFIGS,
   DEFAULT_AUTO_MODE_CONFIG,
-  OperationType
+  type AgentCapability
 } from '../source/core/index.js';
 import {
-  FileSystemAccessPattern,
-  DatabaseTableAccessPattern,
-  APIEndpointAccessPattern
+  ReadTool,
+  EditTool,
+  CreateTool,
+  CommunicationTool,
+  ToolFactory,
+  CommonTools
+} from '../source/core/tools.js';
+import {
+  FileSystemAccessPattern
 } from '../source/core/access-patterns.js';
 
 /**
@@ -21,10 +27,6 @@ import {
 
 // Create the orchestrator with basic configuration
 const orchestrator = createOrchestrator({
-  defaultPermissions: {
-    defaultTools: [AgentTool.READ_LOCAL, AgentTool.INTER_AGENT_COMMUNICATION],
-    requireExplicitToolGrants: true
-  },
   logging: {
     level: 'info',
     logCommunications: true,
@@ -47,75 +49,78 @@ const orchestrator = createOrchestrator({
   }
 });
 
-// Register a React agent with file system access patterns
-orchestrator.registerAgent({
+// Register a React agent using tool-based configuration
+const reactAgent: AgentCapability = {
   id: 'react-agent',
   name: 'React Development Agent',
-  description: 'Handles React components and frontend development',
-  accessPatterns: [
-    new FileSystemAccessPattern(
-      'react-components',
-      'React component files',
-      20,
-      ['**/*.tsx', '**/*.jsx', '**/components/**'],
-      true
-    ),
-    new FileSystemAccessPattern(
-      'react-styles',
-      'CSS and styling files',
-      15,
-      ['**/*.css', '**/*.scss', '**/*.module.css'],
-      true
-    )
-  ],
+  description: 'Handles React components and frontend development with tool-based access patterns',
   tools: [
-    AgentTool.READ_LOCAL,
-    AgentTool.EDIT_FILES,
-    AgentTool.CREATE_FILES,
-    AgentTool.INTER_AGENT_COMMUNICATION
+    // Use pre-configured React tools
+    ...CommonTools.createReactTools(),
+    // Add custom validation tool
+    new CreateTool({
+      id: 'react-test-creator',
+      description: 'Create React component tests',
+      accessPatterns: [
+        new FileSystemAccessPattern(
+          'react-test-files',
+          'React test files',
+          70,
+          ['**/*.test.tsx', '**/*.test.jsx', '**/tests/components/**'],
+          true,
+          [OperationType.WRITE_FILE]
+        )
+      ]
+    })
   ],
   endpoints: [
     { name: 'validate', description: 'Validate React component structure' },
     { name: 'optimize', description: 'Optimize React component performance' },
-    { name: 'refactor', description: 'Refactor React components' }
+    { name: 'refactor', description: 'Refactor React components' },
+    { name: 'question', description: 'Answer React development questions' },
+    { name: 'handle', description: 'Handle React file operations' }
   ]
-});
+};
 
-// Register a TypeScript agent with broader access
-orchestrator.registerAgent({
+orchestrator.registerAgent(reactAgent);
+
+// Register a TypeScript agent using tool-based configuration
+const typescriptAgent: AgentCapability = {
   id: 'typescript-agent',
   name: 'TypeScript Development Agent',
-  description: 'Handles TypeScript code and business logic',
-  accessPatterns: [
-    new FileSystemAccessPattern(
-      'typescript-source',
-      'TypeScript source files',
-      30,
-      ['**/*.ts', '**/src/**', '**/lib/**'],
-      true
-    ),
-    new FileSystemAccessPattern(
-      'config-files',
-      'Configuration files',
-      25,
-      ['**/tsconfig.json', '**/*.config.ts', '**/*.config.js'],
-      true
-    )
-  ],
+  description: 'Handles TypeScript code and business logic with comprehensive tools',
   tools: [
-    AgentTool.READ_LOCAL,
-    AgentTool.READ_GLOBAL,
-    AgentTool.EDIT_FILES,
-    AgentTool.CREATE_FILES,
-    AgentTool.CREATE_DIRECTORIES,
-    AgentTool.INTER_AGENT_COMMUNICATION
+    // Use pre-configured TypeScript tools
+    ...CommonTools.createTypeScriptTools(),
+    // Add configuration file management
+    ...CommonTools.createConfigTools(),
+    // Add directory creation capability
+    new CreateTool({
+      id: 'typescript-directory-creator',
+      description: 'Create TypeScript project directories',
+      accessPatterns: [
+        new FileSystemAccessPattern(
+          'typescript-directories',
+          'TypeScript project directories',
+          60,
+          ['**/src/**', '**/lib/**', '**/types/**', '**/interfaces/**'],
+          true,
+          [OperationType.CREATE_DIRECTORY]
+        )
+      ]
+    })
   ],
   endpoints: [
     { name: 'validate', description: 'Validate TypeScript code' },
     { name: 'compile', description: 'Compile TypeScript code' },
-    { name: 'refactor', description: 'Refactor TypeScript code' }
+    { name: 'refactor', description: 'Refactor TypeScript code' },
+    { name: 'question', description: 'Answer TypeScript questions' },
+    { name: 'transform', description: 'Transform TypeScript code' },
+    { name: 'handle', description: 'Handle TypeScript operations' }
   ]
-});
+};
+
+orchestrator.registerAgent(typescriptAgent);
 
 // Example usage function
 export async function runBasicExample() {
@@ -170,4 +175,5 @@ export async function runBasicExample() {
   }
 }
 
-export { orchestrator };
+// Export the orchestrator and agents for use in other examples
+export { orchestrator, reactAgent, typescriptAgent };

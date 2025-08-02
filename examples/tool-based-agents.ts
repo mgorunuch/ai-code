@@ -1,6 +1,7 @@
 import {
   AgentCapability,
-  OperationType
+  OperationType,
+  type FileAccessContext
 } from '../source/core/types.js';
 import {
   ReadTool,
@@ -16,7 +17,6 @@ import {
   FileSystemAccessPattern,
   CustomAccessPattern
 } from '../source/core/access-patterns.js';
-import { AgentMigrator, MigrationPresets, MigrationUtils } from '../source/core/migration.js';
 
 /**
  * Tool-Based Agent Configuration Examples
@@ -177,7 +177,7 @@ const typescriptAgent: AgentCapability = {
               };
             }
             
-            if (context.operation === OperationType.EDIT_FILE && context.filePath.includes('dist/')) {
+            if (context.operation === 'edit_file' && context.filePath.includes('dist/')) {
               return {
                 allowed: false,
                 reason: 'Cannot edit compiled files in dist directory',
@@ -254,90 +254,71 @@ const testAgent: AgentCapability = {
 
 console.log(`Created modern agents: ${reactAgent.name}, ${typescriptAgent.name}, ${testAgent.name}`);
 
-// 4. Agent Migration Examples
-console.log('🔄 Agent Migration Examples');
+// 4. Common Tool Patterns
+console.log('🎯 Common Tool Patterns');
 
-// Simulate legacy agents (these would typically come from existing system)
-const legacyReactAgent = {
-  id: 'legacy-react-agent',
-  name: 'Legacy React Agent',
-  description: 'Old-style React agent with separate access patterns',
-  accessPatterns: [
-    new FileSystemAccessPattern(
-      'legacy-react-patterns',
-      'Legacy React file patterns',
-      50,
-      ['**/*.tsx', '**/*.jsx', '**/components/**'],
-      true
-    )
-  ],
-  tools: ['read_local', 'edit_files', 'create_files', 'inter_agent_communication'] as any,
+// Create agents using predefined tool patterns
+const quickReactAgent: AgentCapability = {
+  id: 'quick-react',
+  name: 'Quick React Agent',
+  description: 'Quickly created React agent using common patterns',
+  tools: CommonTools.createReactTools(),
   endpoints: [
-    { name: 'question', description: 'Answer React questions' }
+    { name: 'question', description: 'Answer React questions' },
+    { name: 'validate', description: 'Validate React components' },
+    { name: 'handle', description: 'Handle React operations' }
   ]
 };
 
-// Migrate legacy agent to modern system
-const migrator = new AgentMigrator(MigrationPresets.createReactAgentMigration());
-try {
-  const migrationResult = migrator.migrateAgent(legacyReactAgent as any);
-  console.log('Migration successful!');
-  console.log(`Original tools: ${migrationResult.summary.originalToolCount}`);
-  console.log(`Modern tools: ${migrationResult.summary.modernToolCount}`);
-  console.log(`Tools created: ${migrationResult.summary.toolsCreated.join(', ')}`);
-  
-  if (migrationResult.warnings.length > 0) {
-    console.log('Warnings:', migrationResult.warnings);
-  }
-} catch (error) {
-  console.error('Migration failed:', error);
-}
+const quickTypeScriptAgent: AgentCapability = {
+  id: 'quick-typescript',
+  name: 'Quick TypeScript Agent',
+  description: 'Quickly created TypeScript agent using common patterns',
+  tools: CommonTools.createTypeScriptTools(),
+  endpoints: [
+    { name: 'question', description: 'Answer TypeScript questions' },
+    { name: 'validate', description: 'Validate TypeScript code' },
+    { name: 'handle', description: 'Handle TypeScript operations' }
+  ]
+};
 
-// 5. Common Tool Patterns
-console.log('🎯 Common Tool Patterns');
+const quickTestAgent: AgentCapability = {
+  id: 'quick-test',
+  name: 'Quick Test Agent',
+  description: 'Quickly created test agent using common patterns',
+  tools: CommonTools.createTestTools(),
+  endpoints: [
+    { name: 'question', description: 'Answer testing questions' },
+    { name: 'validate', description: 'Validate test coverage' },
+    { name: 'handle', description: 'Handle test operations' }
+  ]
+};
 
-// Create agents using predefined patterns
-const quickReactAgent = MigrationUtils.createModernAgentFromPattern(
-  'quick-react',
-  'Quick React Agent',
-  'Quickly created React agent using patterns',
-  'react'
-);
-
-const quickTypeScriptAgent = MigrationUtils.createModernAgentFromPattern(
-  'quick-typescript',
-  'Quick TypeScript Agent',
-  'Quickly created TypeScript agent using patterns',
-  'typescript'
-);
-
-const quickTestAgent = MigrationUtils.createModernAgentFromPattern(
-  'quick-test',
-  'Quick Test Agent',
-  'Quickly created test agent using patterns',
-  'test'
-);
-
-const quickConfigAgent = MigrationUtils.createModernAgentFromPattern(
-  'quick-config',
-  'Quick Config Agent',
-  'Quickly created config agent using patterns',
-  'config'
-);
+const quickConfigAgent: AgentCapability = {
+  id: 'quick-config',
+  name: 'Quick Config Agent',
+  description: 'Quickly created config agent using common patterns',
+  tools: CommonTools.createConfigTools(),
+  endpoints: [
+    { name: 'question', description: 'Answer configuration questions' },
+    { name: 'validate', description: 'Validate configuration files' },
+    { name: 'handle', description: 'Handle config operations' }
+  ]
+};
 
 console.log(`Quick agents created: ${quickReactAgent.name}, ${quickTypeScriptAgent.name}, ${quickTestAgent.name}, ${quickConfigAgent.name}`);
 
-// 6. Tool Access Testing
+// 5. Tool Access Testing
 console.log('🧪 Tool Access Testing Examples');
 
 async function demonstrateToolAccess() {
   console.log('Testing tool access patterns...');
   
   // Create test context
-  const testContext = {
+  const testContext: FileAccessContext = {
     resource: 'src/components/Button.tsx',
     filePath: 'src/components/Button.tsx',
-    operation: OperationType.EDIT_FILE,
+    operation: 'edit_file' as OperationType,
     requesterId: 'test-system',
     agentId: 'react-agent',
     timestamp: new Date()
@@ -369,32 +350,39 @@ async function demonstrateToolAccess() {
 
   // Test operation handling
   console.log('\nTesting operation handling...');
-  console.log(`React read tool can handle READ_FILE: ${reactReadTool.canHandle(OperationType.READ_FILE)}`);
-  console.log(`React read tool can handle EDIT_FILE: ${reactReadTool.canHandle(OperationType.EDIT_FILE)}`);
-  console.log(`React edit tool can handle EDIT_FILE: ${reactEditTool.canHandle(OperationType.EDIT_FILE)}`);
-  console.log(`Communication tool can handle QUESTION: ${communicationTool.canHandle(OperationType.QUESTION)}`);
+  console.log(`React read tool can handle read_file: ${reactReadTool.canHandle('read_file' as OperationType)}`);
+  console.log(`React read tool can handle edit_file: ${reactReadTool.canHandle('edit_file' as OperationType)}`);
+  console.log(`React edit tool can handle edit_file: ${reactEditTool.canHandle('edit_file' as OperationType)}`);
+  console.log(`Communication tool can handle question: ${communicationTool.canHandle('question' as OperationType)}`);
 }
 
-// 7. Agent Validation
+// 6. Agent Validation
 console.log('✅ Agent Validation Examples');
 
 function validateAgents() {
   const agents = [reactAgent, typescriptAgent, testAgent, quickReactAgent];
   
   for (const agent of agents) {
-    const validation = MigrationUtils.validateMigratedAgent(agent);
     console.log(`\n${agent.name} validation:`);
-    console.log(`Valid: ${validation.valid ? '✅' : '❌'}`);
+    console.log(`Agent ID: ${agent.id}`);
+    console.log(`Tools count: ${agent.tools.length}`);
+    console.log(`Endpoints count: ${agent.endpoints.length}`);
     
-    if (validation.issues.length > 0) {
-      console.log('Issues:');
-      validation.issues.forEach(issue => console.log(`  - ${issue}`));
-    }
+    // Basic validation checks
+    const hasQuestionEndpoint = agent.endpoints.some(ep => ep.name === 'question');
+    const hasHandleEndpoint = agent.endpoints.some(ep => ep.name === 'handle');
+    const hasCommunicationTool = agent.tools.some(tool => tool.canHandle('question' as OperationType));
     
-    if (validation.recommendations.length > 0) {
-      console.log('Recommendations:');
-      validation.recommendations.forEach(rec => console.log(`  - ${rec}`));
-    }
+    console.log(`Has question endpoint: ${hasQuestionEndpoint ? '✅' : '❌'}`);
+    console.log(`Has handle endpoint: ${hasHandleEndpoint ? '✅' : '❌'}`);
+    console.log(`Has communication capability: ${hasCommunicationTool ? '✅' : '❌'}`);
+    
+    // Check tool capabilities
+    const fileOperations = ['read_file', 'edit_file', 'write_file', 'delete_file'] as OperationType[];
+    const supportedOps = fileOperations.filter(op => 
+      agent.tools.some(tool => tool.canHandle(op))
+    );
+    console.log(`Supported operations: ${supportedOps.join(', ')}`);
   }
 }
 
@@ -434,8 +422,8 @@ export async function runToolBasedExamples() {
   console.log('\n📊 Summary:');
   console.log(`- Created ${6} individual tools`);
   console.log(`- Created ${3} modern agents with tool-based configuration`);
-  console.log(`- Created ${4} quick agents using patterns`);
-  console.log(`- Demonstrated migration from legacy to modern system`);
+  console.log(`- Created ${4} quick agents using common patterns`);
+  console.log(`- Demonstrated tool access validation`);
   console.log(`- Validated agent configurations`);
   
   console.log('\n✨ Key Benefits of Tool-Based System:');
@@ -444,5 +432,5 @@ export async function runToolBasedExamples() {
   console.log('- Better separation of concerns');
   console.log('- Easier testing and validation');
   console.log('- More flexible permission model');
-  console.log('- Backward compatibility with legacy agents');
+  console.log('- Reusable tool patterns for common use cases');
 }

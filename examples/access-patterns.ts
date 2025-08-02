@@ -6,7 +6,7 @@ import {
   TimeBasedAccessPattern,
   CustomAccessPattern
 } from '../source/core/access-patterns.js';
-import type { FileAccessContext } from '../source/core/types.js';
+import type { FileAccessContext, OperationType } from '../source/core/types.js';
 
 /**
  * Access Patterns Usage Examples
@@ -150,11 +150,8 @@ const businessHoursPattern = new TimeBasedAccessPattern(
   'Business hours access only',
   50,
   systemTablesPattern, // Base pattern
-  {
-    allowedHours: { start: 9, end: 17 }, // 9 AM to 5 PM
-    timezone: 'America/New_York',
-    allowWeekends: false
-  }
+  { start: 9, end: 17 }, // 9 AM to 5 PM
+  [1, 2, 3, 4, 5] // Monday to Friday
 );
 
 // Maintenance window restriction
@@ -163,11 +160,8 @@ const maintenancePattern = new TimeBasedAccessPattern(
   'Maintenance window access',
   100,
   adminAPIPattern, // Base pattern
-  {
-    allowedHours: { start: 2, end: 6 }, // 2 AM to 6 AM
-    timezone: 'UTC',
-    allowWeekends: true
-  }
+  { start: 2, end: 6 }, // 2 AM to 6 AM
+  undefined // All days allowed
 );
 
 // 6. Custom Access Patterns
@@ -193,7 +187,7 @@ const customFilePattern = new CustomAccessPattern(
       };
     }
     
-    if (context.operation.type === 'DELETE_FILE' && context.filePath.includes('critical')) {
+    if (context.operation === 'delete_file' && context.filePath.includes('critical')) {
       return {
         allowed: false,
         reason: 'Critical files cannot be deleted',
@@ -283,14 +277,12 @@ export async function demonstrateAccessPatterns() {
   
   // Create a sample context
   const sampleContext: FileAccessContext = {
+    resource: 'src/components/Button.tsx',
     filePath: 'src/components/Button.tsx',
-    operation: {
-      type: 'EDIT_FILE',
-      requestId: 'demo-1',
-      timestamp: new Date()
-    },
+    operation: 'edit_file' as OperationType,
+    requesterId: 'react-agent',
     agentId: 'react-agent',
-    requestId: 'demo-1'
+    timestamp: new Date()
   };
   
   // Test patterns

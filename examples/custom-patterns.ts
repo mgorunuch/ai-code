@@ -1,4 +1,4 @@
-import { AccessPattern, FileAccessContext, AccessPatternResult } from '../source/core/types.js';
+import { AccessPattern, FileAccessContext, AccessPatternResult, OperationType } from '../source/core/types.js';
 
 /**
  * Custom Access Pattern Class Examples
@@ -37,15 +37,22 @@ export class DatabaseTableAccess extends AccessPattern<FileAccessContext> {
       };
     }
 
-    // Check if operation is allowed
-    const operationType = context.operation.type;
-    if (!this.allowedOperations.includes(operationType)) {
+    // Check if operation is allowed (map file operations to database operations)
+    const operationMapping: Record<string, string> = {
+      'read_file': 'SELECT',
+      'edit_file': 'UPDATE',
+      'write_file': 'INSERT',
+      'delete_file': 'DELETE'
+    };
+    
+    const dbOperation = operationMapping[context.operation] || context.operation;
+    if (!this.allowedOperations.includes(dbOperation)) {
       return {
         allowed: false,
-        reason: `Operation ${operationType} not allowed on table ${this.tableName}`,
+        reason: `Operation ${dbOperation} not allowed on table ${this.tableName}`,
         metadata: { 
           tableName: this.tableName,
-          requestedOperation: operationType,
+          requestedOperation: dbOperation,
           allowedOperations: this.allowedOperations
         }
       };
@@ -53,10 +60,10 @@ export class DatabaseTableAccess extends AccessPattern<FileAccessContext> {
 
     return {
       allowed: true,
-      reason: `Access granted to table ${this.tableName} for ${operationType}`,
+      reason: `Access granted to table ${this.tableName} for ${dbOperation}`,
       metadata: { 
         tableName: this.tableName,
-        operation: operationType,
+        operation: dbOperation,
         accessType: 'table-access'
       }
     };
@@ -95,13 +102,13 @@ export class APIEndpointAccess extends AccessPattern<FileAccessContext> {
 
     // For file operations, we'll map them to HTTP methods conceptually
     const operationToMethod: Record<string, string> = {
-      'READ_FILE': 'GET',
-      'EDIT_FILE': 'PUT',
-      'CREATE_FILE': 'POST',
-      'DELETE_FILE': 'DELETE'
+      'read_file': 'GET',
+      'edit_file': 'PUT',
+      'write_file': 'POST',
+      'delete_file': 'DELETE'
     };
 
-    const method = operationToMethod[context.operation.type] || 'UNKNOWN';
+    const method = operationToMethod[context.operation] || 'UNKNOWN';
     
     if (!this.allowedMethods.includes(method)) {
       return {
@@ -176,13 +183,13 @@ export class CloudStorageAccess extends AccessPattern<FileAccessContext> {
     }
 
     // Check allowed operations
-    if (!this.allowedOperations.includes(context.operation.type)) {
+    if (!this.allowedOperations.includes(context.operation)) {
       return {
         allowed: false,
-        reason: `Operation ${context.operation.type} not allowed on bucket ${this.bucketName}`,
+        reason: `Operation ${context.operation} not allowed on bucket ${this.bucketName}`,
         metadata: { 
           bucketName: this.bucketName,
-          requestedOperation: context.operation.type,
+          requestedOperation: context.operation,
           allowedOperations: this.allowedOperations
         }
       };
@@ -194,7 +201,7 @@ export class CloudStorageAccess extends AccessPattern<FileAccessContext> {
       metadata: { 
         bucketName: this.bucketName,
         pathPrefix: this.pathPrefix,
-        operation: context.operation.type,
+        operation: context.operation,
         accessType: 'cloud-storage-access'
       }
     };
@@ -258,13 +265,13 @@ export class SecurityLevelAccess extends AccessPattern<FileAccessContext> {
     }
 
     // Additional restrictions for high-security operations
-    if (this.securityLevel === 'restricted' && context.operation.type === 'DELETE_FILE') {
+    if (this.securityLevel === 'restricted' && context.operation === 'delete_file') {
       return {
         allowed: false,
         reason: 'Deletion of restricted files requires special authorization',
         metadata: { 
           securityLevel: this.securityLevel,
-          operation: context.operation.type,
+          operation: context.operation,
           accessType: 'operation-restricted'
         }
       };
@@ -276,7 +283,7 @@ export class SecurityLevelAccess extends AccessPattern<FileAccessContext> {
       metadata: { 
         securityLevel: this.securityLevel,
         userClearance: this.userClearanceLevel,
-        operation: context.operation.type,
+        operation: context.operation,
         accessType: 'security-approved'
       }
     };
@@ -318,7 +325,7 @@ export class GitBranchAccess extends AccessPattern<FileAccessContext> {
 
     // Extra protection for protected branches
     if (this.protectedBranches.includes(this.currentBranch) && 
-        ['DELETE_FILE', 'EDIT_FILE'].includes(context.operation.type)) {
+        ['delete_file', 'edit_file'].includes(context.operation)) {
       
       // In a real implementation, you might check for pull request requirements
       return {
@@ -327,7 +334,7 @@ export class GitBranchAccess extends AccessPattern<FileAccessContext> {
         metadata: { 
           currentBranch: this.currentBranch,
           protectedBranches: this.protectedBranches,
-          operation: context.operation.type,
+          operation: context.operation,
           accessType: 'protected-branch-restriction'
         }
       };
@@ -338,7 +345,7 @@ export class GitBranchAccess extends AccessPattern<FileAccessContext> {
       reason: `Git branch access validated for ${this.currentBranch}`,
       metadata: { 
         currentBranch: this.currentBranch,
-        operation: context.operation.type,
+        operation: context.operation,
         accessType: 'branch-approved'
       }
     };
@@ -375,14 +382,12 @@ export async function demonstrateCustomPatterns() {
   console.log('🎨 Demonstrating Custom Access Patterns');
   
   const testContext: FileAccessContext = {
+    resource: 'src/auth/security/user-auth.ts',
     filePath: 'src/auth/security/user-auth.ts',
-    operation: {
-      type: 'EDIT_FILE',
-      requestId: 'custom-demo-1',
-      timestamp: new Date()
-    },
+    operation: 'edit_file' as OperationType,
+    requesterId: 'security-agent',
     agentId: 'security-agent',
-    requestId: 'custom-demo-1'
+    timestamp: new Date()
   };
 
   const patterns = [
