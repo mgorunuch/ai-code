@@ -22,7 +22,6 @@ export type {
   QuestionResponse,
   OrchestrationConfig,
   OrchestrationEvents,
-  AgentTool,
   // Model selection types
   ModelCapabilities,
   ModelConfig,
@@ -34,6 +33,22 @@ export type {
 // Re-export enums for convenience
 export { OperationType, AIModel, AgentTool } from './types.js';
 
+// Export access pattern classes
+export { 
+  FileSystemAccessPattern,
+  DatabaseTableAccessPattern,
+  APIEndpointAccessPattern,
+  CompositeAccessPattern,
+  TimeBasedAccessPattern,
+  CustomAccessPattern
+} from './access-patterns.js';
+
+// Export access pattern types
+export type {
+  DatabaseAccessContext,
+  APIAccessContext
+} from './access-patterns.js';
+
 // Core systems
 export { AgentRegistry } from './agent-registry.js';
 export { PermissionSystem } from './permissions.js';
@@ -42,8 +57,10 @@ export { CoreOrchestrator } from './orchestrator.js';
 export { ModelSelector, createModelSelector } from './model-selector.js';
 
 // Import the actual types we need
-import type { AgentCapability, AgentTool, OrchestrationConfig } from './types.js';
+import type { OrchestrationConfig, AgentCapability } from './types.js';
+import { AgentTool } from './types.js';
 import { CoreOrchestrator } from './orchestrator.js';
+import { FileSystemAccessPattern } from './access-patterns.js';
 
 // Permission system types
 export type { PermissionRule, PermissionAuditLog } from './permissions.js';
@@ -91,13 +108,13 @@ export function createAgentCapability(
     name,
     description: options?.description || `Agent responsible for ${filePatterns.join(', ')}`,
     accessPatterns: [
-      {
-        id: `${id}-main-pattern`,
-        description: `Main access pattern for ${name}`,
+      new FileSystemAccessPattern(
+        `${id}-main-pattern`,
+        `Main access pattern for ${name}`,
+        options?.priority || 20,
         filePatterns,
-        allow: true,
-        priority: options?.priority || 20
-      }
+        true // allow access
+      )
     ],
     tools: options?.tools || [AgentTool.READ_LOCAL, AgentTool.INTER_AGENT_COMMUNICATION],
     endpoints: options?.endpoints || [

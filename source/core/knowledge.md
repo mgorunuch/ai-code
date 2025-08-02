@@ -58,172 +58,241 @@ The system includes comprehensive **AI model selection** capabilities with auto 
 
 ## Key Features
 
-### Modern Access Patterns System
+### Class-Based Access Patterns System
 
-The core orchestration system supports a flexible access patterns system that provides sophisticated control over agent responsibilities. Agents can be configured with:
+The core orchestration system uses an extensible class-based access patterns system that provides sophisticated control over resource access. All access patterns must extend the base `AccessPattern` class, making the system generic and extensible for any type of resource (files, database tables, API endpoints, etc.).
 
-1. **Object-based Access Patterns** (complex configuration)
-2. **Function-based Access Patterns** (custom validation logic)
-3. **Class-based Access Patterns** (sophisticated access control)
-
-#### Object-based Access Patterns
-
-Configure agents with structured access pattern objects:
+#### Core Access Pattern Architecture
 
 ```typescript
+// Base class for all access patterns
+export abstract class AccessPattern<TContext extends AccessContext = AccessContext> {
+  abstract readonly id: string;
+  abstract readonly description: string;
+  abstract readonly priority: number;
+  abstract validate(context: TContext): AccessPatternResult | Promise<AccessPatternResult>;
+  abstract appliesTo(context: TContext): boolean | Promise<boolean>;
+}
+
+// Generic context for any resource type
+export interface AccessContext<TResource = any> {
+  resource: TResource;
+  operation: string;
+  requesterId: string;
+  metadata?: Record<string, any>;
+  timestamp?: Date;
+}
+```
+
+#### File System Access Pattern
+
+For file-based access control:
+
+```typescript
+import { FileSystemAccessPattern } from './core/access-patterns.js';
+
 const agent: AgentCapability = {
   id: 'react-agent',
   name: 'React Frontend Agent',
   accessPatterns: [
-    {
-      id: 'react-components',
-      description: 'React component files',
-      filePatterns: ['**/*.tsx', '**/*.jsx'],
-      operations: [OperationType.READ_FILE, OperationType.EDIT_FILE],
-      allow: true,
-      priority: 20
-    },
-    {
-      id: 'component-directories',
-      description: 'Component directories',
-      filePatterns: ['**/components/**/*', '**/pages/**/*'],
-      allow: true,
-      priority: 15,
-      config: {
-        excludeTests: true,
-        allowNewFiles: true
-      }
-    }
+    new FileSystemAccessPattern(
+      'react-components',
+      'React component files',
+      20, // priority
+      ['**/*.tsx', '**/*.jsx', '**/components/**/*'],
+      true, // allow access
+      [OperationType.READ_FILE, OperationType.EDIT_FILE] // allowed operations
+    )
   ],
   tools: [AgentTool.READ_LOCAL, AgentTool.EDIT_FILES],
   endpoints: [{ name: 'question', description: 'Answer React questions' }]
 };
 ```
 
-#### Function-based Access Patterns
+#### Database Access Pattern
 
-Use custom validation functions for dynamic access control:
-
-```typescript
-const customValidation: AccessPatternFunction = async (context) => {
-  // Custom validation logic
-  if (context.filePath.includes('test') && context.operation === OperationType.DELETE_FILE) {
-    return {
-      allowed: false,
-      reason: 'Cannot delete test files',
-      patternId: 'test-protection'
-    };
-  }
-  
-  // Check file size, modification time, etc.
-  if (context.metadata?.fileSize && context.metadata.fileSize > 1024 * 1024) {
-    return {
-      allowed: false,
-      reason: 'File too large for this agent',
-      patternId: 'size-limit'
-    };
-  }
-  
-  return {
-    allowed: true,
-    reason: 'Custom validation passed',
-    patternId: 'custom-validation'
-  };
-};
-
-const agent: AgentCapability = {
-  id: 'test-agent',
-  name: 'Test Agent',
-  accessPatterns: [
-    {
-      id: 'test-files',
-      description: 'Test files',
-      filePatterns: ['**/*.test.ts'],
-      allow: true,
-      priority: 20
-    },
-    customValidation  // Function pattern
-  ],
-  tools: [AgentTool.READ_LOCAL, AgentTool.EDIT_FILES],
-  endpoints: [{ name: 'test', description: 'Run tests' }]
-};
-```
-
-#### Class-based Access Patterns
-
-Implement sophisticated access control with custom classes:
+For database table access control:
 
 ```typescript
-class DatabaseAccessPattern extends AccessPatternClass {
-  id = 'database-security';
-  description = 'Database security access pattern';
-  priority = 100;
+import { DatabaseTableAccessPattern } from './core/access-patterns.js';
 
-  appliesTo(context: AccessContext): boolean {
-    return context.filePath.includes('database') || 
-           context.filePath.endsWith('.sql') ||
-           context.filePath.includes('migration');
-  }
-
-  async validate(context: AccessContext): Promise<AccessPatternResult> {
-    // Check if it's a production database operation
-    if (context.filePath.includes('production') && 
-        [OperationType.DELETE_FILE, OperationType.EDIT_FILE].includes(context.operation)) {
-      
-      // Additional security checks
-      const isAuthorized = await this.checkDatabaseAuthorization(context.agentId);
-      if (!isAuthorized) {
-        return {
-          allowed: false,
-          reason: 'Agent not authorized for production database operations',
-          metadata: { securityLevel: 'high' }
-        };
-      }
-    }
-
-    return {
-      allowed: true,
-      reason: 'Database access authorized',
-      metadata: { 
-        securityLevel: 'standard',
-        checkedBy: this.id
-      }
-    };
-  }
-
-  private async checkDatabaseAuthorization(agentId: string): Promise<boolean> {
-    // Custom authorization logic
-    const authorizedAgents = ['database-admin', 'senior-dev'];
-    return authorizedAgents.includes(agentId);
-  }
-}
+const databasePattern = new DatabaseTableAccessPattern(
+  'user-table-access',
+  'User table access control',
+  50,
+  ['users', 'user_profiles', 'user_*'], // table patterns
+  ['SELECT', 'INSERT', 'UPDATE'], // allowed operations
+  true // allow access
+);
 
 const agent: AgentCapability = {
   id: 'database-agent',
   name: 'Database Agent',
-  accessPatterns: [
-    new DatabaseAccessPattern(),
-    {
-      id: 'read-only-access',
-      description: 'Read-only database access',
-      filePatterns: ['**/*.sql'],
-      operations: [OperationType.READ_FILE],
-      allow: true,
-      priority: 50
-    }
-  ],
-  tools: [AgentTool.READ_LOCAL, AgentTool.EDIT_FILES, AgentTool.DELETE_FILES],
+  accessPatterns: [databasePattern],
+  tools: [AgentTool.READ_LOCAL, AgentTool.EXECUTE_COMMANDS],
   endpoints: [{ name: 'query', description: 'Execute database queries' }]
 };
 ```
 
-**Pattern Matching Rules:**
+#### API Endpoint Access Pattern
+
+For REST API access control:
+
+```typescript
+import { APIEndpointAccessPattern } from './core/access-patterns.js';
+
+const apiPattern = new APIEndpointAccessPattern(
+  'api-user-endpoints',
+  'User API endpoints access',
+  30,
+  ['/api/users/*', '/api/auth/*'], // endpoint patterns
+  ['GET', 'POST'], // allowed methods
+  true // allow access
+);
+```
+
+#### Custom Access Pattern Implementation
+
+Create custom patterns for any resource type:
+
+```typescript
+// Custom pattern for cloud storage access
+interface CloudStorageContext extends AccessContext<string> {
+  bucket: string;
+  key: string;
+  operation: 'READ' | 'WRITE' | 'DELETE' | 'LIST';
+  userId: string;
+}
+
+class CloudStorageAccessPattern extends AccessPattern<CloudStorageContext> {
+  constructor(
+    public readonly id: string,
+    public readonly description: string,
+    public readonly priority: number,
+    private readonly bucketPatterns: string[],
+    private readonly keyPatterns: string[],
+    private readonly allowedOperations: string[]
+  ) {
+    super();
+  }
+
+  async appliesTo(context: CloudStorageContext): Promise<boolean> {
+    const bucketMatches = this.bucketPatterns.some(pattern => 
+      minimatch(context.bucket, pattern)
+    );
+    const keyMatches = this.keyPatterns.some(pattern => 
+      minimatch(context.key, pattern)
+    );
+    return bucketMatches && keyMatches;
+  }
+
+  async validate(context: CloudStorageContext): Promise<AccessPatternResult> {
+    if (!this.allowedOperations.includes(context.operation)) {
+      return {
+        allowed: false,
+        reason: `Operation ${context.operation} not allowed on ${context.bucket}/${context.key}`,
+        patternId: this.id
+      };
+    }
+
+    // Additional validation logic
+    if (context.bucket.includes('production') && context.operation === 'DELETE') {
+      return {
+        allowed: false,
+        reason: 'Cannot delete from production buckets',
+        patternId: this.id,
+        metadata: { securityLevel: 'high' }
+      };
+    }
+
+    return {
+      allowed: true,
+      reason: `${context.operation} allowed on ${context.bucket}/${context.key}`,
+      patternId: this.id
+    };
+  }
+}
+```
+
+#### Composite Access Patterns
+
+Combine multiple patterns with AND/OR logic:
+
+```typescript
+import { CompositeAccessPattern, TimeBasedAccessPattern } from './core/access-patterns.js';
+
+// Base pattern for file access
+const filePattern = new FileSystemAccessPattern(
+  'source-files',
+  'Source code files',
+  20,
+  ['src/**/*.ts', 'src/**/*.tsx'],
+  true
+);
+
+// Wrap with time restrictions
+const businessHoursPattern = new TimeBasedAccessPattern(
+  'business-hours-only',
+  'Business hours access restriction',
+  100,
+  filePattern,
+  { start: 9, end: 17 }, // 9 AM to 5 PM
+  [1, 2, 3, 4, 5] // Monday to Friday
+);
+
+// Combine multiple patterns
+const compositePattern = new CompositeAccessPattern(
+  'combined-access',
+  'Combined access rules',
+  50,
+  [businessHoursPattern, anotherPattern],
+  'AND' // Both patterns must allow access
+);
+```
+
+#### Custom Validation Pattern
+
+For complex custom logic:
+
+```typescript
+import { CustomAccessPattern } from './core/access-patterns.js';
+
+const customPattern = new CustomAccessPattern(
+  'complex-validation',
+  'Complex custom validation',
+  75,
+  // appliesTo function
+  async (context) => {
+    // Custom logic to determine if pattern applies
+    return context.resource.startsWith('/secure/');
+  },
+  // validate function
+  async (context) => {
+    // Complex validation logic
+    const securityCheck = await performSecurityCheck(context);
+    if (!securityCheck.passed) {
+      return {
+        allowed: false,
+        reason: securityCheck.reason,
+        metadata: { securityLevel: 'critical' }
+      };
+    }
+    
+    return {
+      allowed: true,
+      reason: 'Security check passed'
+    };
+  }
+);
+```
+
+**Pattern Evaluation Rules:**
+- All patterns must extend the base `AccessPattern` class
 - Higher priority patterns override lower priority ones
-- `**` matches any number of directories
-- `*` matches any single directory or filename segment
-- `!pattern` excludes matching paths
-- Custom functions and classes provide ultimate flexibility
 - Patterns are evaluated in priority order (highest first)
+- The `appliesTo` method determines if a pattern should be evaluated
+- The `validate` method performs the actual access control logic
+- Results are cached for performance (configurable)
 
 ### Tools-Based Permission System
 
@@ -422,9 +491,9 @@ import {
   AIModel, 
   DEFAULT_MODEL_CONFIGS, 
   DEFAULT_AUTO_MODE_CONFIG,
-  AccessPatternObject,
-  AccessPatternFunction,
-  AccessPatternClass
+  FileSystemAccessPattern,
+  CustomAccessPattern,
+  AccessPattern
 } from './core/index.js';
 
 const orchestrator = createOrchestrator({
@@ -479,18 +548,18 @@ orchestrator.registerAgent(DefaultAgents.createTestAgent());
 
 ```typescript
 // Define a custom security access pattern class
-class SecurityAccessPattern extends AccessPatternClass {
-  id = 'security-pattern';
-  description = 'Security-aware access pattern';
-  priority = 100;
+class SecurityAccessPattern extends AccessPattern<FileAccessContext> {
+  readonly id = 'security-pattern';
+  readonly description = 'Security-aware access pattern';
+  readonly priority = 100;
 
-  appliesTo(context: AccessContext): boolean {
+  async appliesTo(context: FileAccessContext): Promise<boolean> {
     return context.filePath.includes('security') || 
            context.filePath.includes('auth') ||
            context.filePath.includes('password');
   }
 
-  async validate(context: AccessContext): Promise<AccessPatternResult> {
+  async validate(context: FileAccessContext): Promise<AccessPatternResult> {
     // Only allow read operations on security files
     if (context.operation !== OperationType.READ_FILE) {
       return {
@@ -508,59 +577,70 @@ class SecurityAccessPattern extends AccessPatternClass {
   }
 }
 
-// Define a custom validation function
-const databaseValidation: AccessPatternFunction = async (context) => {
-  if (context.filePath.endsWith('.sql') && context.operation === OperationType.EDIT_FILE) {
-    // Check if it's a migration file
-    if (context.filePath.includes('migration')) {
-      // Additional validation for migrations
-      const isSafeOperation = await checkMigrationSafety(context.filePath);
-      if (!isSafeOperation) {
-        return {
-          allowed: false,
-          reason: 'Unsafe migration detected',
-          patternId: 'migration-safety'
-        };
-      }
-    }
+// Define a custom database validation pattern
+class DatabaseValidationPattern extends AccessPattern<FileAccessContext> {
+  readonly id = 'database-validation';
+  readonly description = 'Database file validation';
+  readonly priority = 60;
+  
+  async appliesTo(context: FileAccessContext): Promise<boolean> {
+    return context.filePath.endsWith('.sql');
   }
   
-  return {
-    allowed: true,
-    reason: 'Database operation validated',
-    patternId: 'database-validation'
-  };
-};
+  async validate(context: FileAccessContext): Promise<AccessPatternResult> {
+    if (context.operation === OperationType.EDIT_FILE) {
+      // Check if it's a migration file
+      if (context.filePath.includes('migration')) {
+        // Additional validation for migrations
+        const isSafeOperation = await this.checkMigrationSafety(context.filePath);
+        if (!isSafeOperation) {
+          return {
+            allowed: false,
+            reason: 'Unsafe migration detected',
+            patternId: this.id
+          };
+        }
+      }
+    }
+    
+    return {
+      allowed: true,
+      reason: 'Database operation validated',
+      patternId: this.id
+    };
+  }
+  
+  private async checkMigrationSafety(filePath: string): Promise<boolean> {
+    // Implementation for migration safety checks
+    return true;
+  }
+}
 
 const customAgent: AgentCapability = {
   id: 'database-agent',
   name: 'Database Management Agent',
   description: 'Handles database schemas and migrations with advanced security',
   accessPatterns: [
-    // Object-based patterns
-    {
-      id: 'database-files',
-      description: 'Database schema and migration files',
-      filePatterns: ['**/migrations/**/*', '**/schemas/**/*', '**/*.sql'],
-      operations: [OperationType.READ_FILE, OperationType.EDIT_FILE],
-      allow: true,
-      priority: 50,
-      config: {
-        requireBackup: true,
-        auditLog: true
-      }
-    },
-    {
-      id: 'config-files',
-      description: 'Database configuration files',
-      filePatterns: ['**/database.config.*', '**/db-config.*'],
-      operations: [OperationType.READ_FILE],
-      allow: true,
-      priority: 30
-    },
-    // Function-based pattern
-    databaseValidation,
-    // Class-based pattern
+    // File system patterns
+    new FileSystemAccessPattern(
+      'database-files',
+      'Database schema and migration files',
+      50,
+      ['**/migrations/**/*', '**/schemas/**/*', '**/*.sql'],
+      true,
+      [OperationType.READ_FILE, OperationType.EDIT_FILE]
+    ),
+    new FileSystemAccessPattern(
+      'config-files',
+      'Database configuration files',
+      30,
+      ['**/database.config.*', '**/db-config.*'],
+      true,
+      [OperationType.READ_FILE]
+    ),
+    // Custom validation pattern
+    new DatabaseValidationPattern(),
+    // Security pattern
     new SecurityAccessPattern()
   ],
   tools: [
@@ -687,29 +767,41 @@ orchestrator.updateModelSelectionConfig({
 
 ```typescript
 // Add global access patterns
-orchestrator.addGlobalAccessPattern({
-  id: 'emergency-access',
-  description: 'Emergency read access for all agents',
-  filePatterns: ['**/emergency/**/*'],
-  operations: [OperationType.READ_FILE],
-  allow: true,
-  priority: 1000
-});
+orchestrator.addGlobalAccessPattern(
+  new FileSystemAccessPattern(
+    'emergency-access',
+    'Emergency read access for all agents',
+    1000, // high priority
+    ['**/emergency/**/*'],
+    true, // allow
+    [OperationType.READ_FILE]
+  )
+);
 
-// Add function-based global pattern
-const auditPattern: AccessPatternFunction = async (context) => {
-  // Log all file operations for audit
-  console.log(`AUDIT: ${context.agentId} performing ${context.operation} on ${context.filePath}`);
+// Add audit pattern using custom class
+class AuditAccessPattern extends AccessPattern<FileAccessContext> {
+  readonly id = 'audit-logger';
+  readonly description = 'Audit all file operations';
+  readonly priority = 1; // low priority, runs after other patterns
   
-  return {
-    allowed: true,
-    reason: 'Audit logged',
-    patternId: 'audit-logger',
-    metadata: { audited: true, timestamp: new Date() }
-  };
-};
+  async appliesTo(context: FileAccessContext): Promise<boolean> {
+    return true; // Apply to all file operations
+  }
+  
+  async validate(context: FileAccessContext): Promise<AccessPatternResult> {
+    // Log all file operations for audit
+    console.log(`AUDIT: ${context.agentId} performing ${context.operation} on ${context.filePath}`);
+    
+    return {
+      allowed: true,
+      reason: 'Audit logged',
+      patternId: this.id,
+      metadata: { audited: true, timestamp: new Date() }
+    };
+  }
+}
 
-orchestrator.addGlobalAccessPattern(auditPattern);
+orchestrator.addGlobalAccessPattern(new AuditAccessPattern());
 
 // Test access patterns for debugging
 const testResult = await orchestrator.testAccessPattern(
@@ -808,31 +900,30 @@ interface AccessPatternsConfig {
   maxCacheSize?: number;
 }
 
-interface AccessPatternObject {
-  id: string;
-  description: string;
-  filePatterns?: string[];
-  operations?: OperationType[];
-  validate?: AccessPatternFunction;
-  allow: boolean;
-  priority: number;
-  config?: Record<string, any>;
+// Generic base class for all access patterns
+abstract class AccessPattern<TContext extends AccessContext = AccessContext> {
+  abstract readonly id: string;
+  abstract readonly description: string;
+  abstract readonly priority: number;
+  abstract validate(context: TContext): AccessPatternResult | Promise<AccessPatternResult>;
+  abstract appliesTo(context: TContext): boolean | Promise<boolean>;
 }
 
-type AccessPatternFunction = (context: AccessContext) => AccessPatternResult | Promise<AccessPatternResult>;
-
-abstract class AccessPatternClass {
-  abstract id: string;
-  abstract description: string;
-  abstract priority: number;
-  abstract validate(context: AccessContext): AccessPatternResult | Promise<AccessPatternResult>;
-  abstract appliesTo(context: AccessContext): boolean;
+// Generic context for any resource type
+interface AccessContext<TResource = any> {
+  resource: TResource;
+  operation: string;
+  requesterId: string;
+  metadata?: Record<string, any>;
+  timestamp?: Date;
 }
 
-type AccessPattern = 
-  | AccessPatternObject       // Object configuration
-  | AccessPatternFunction     // Function validator
-  | AccessPatternClass;       // Class instance
+// Specialized context for file system access
+interface FileAccessContext extends AccessContext<FilePath> {
+  filePath: FilePath;
+  operation: OperationType;
+  agentId: AgentId;
+}
 ```
 
 ### Model Selection Config
@@ -868,7 +959,7 @@ interface AgentCapability {
   id: string;                           // Unique agent identifier
   name: string;                         // Human-readable name
   description: string;                  // Purpose description
-  accessPatterns: AccessPattern[];      // Modern access patterns
+  accessPatterns: AccessPattern[];      // Class-based access patterns
   tools: AgentTool[];                   // Granted tools for operations
   endpoints: AgentEndpoint[];           // Available operations
 }

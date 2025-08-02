@@ -10,13 +10,13 @@ import type {
   AgentCapability,
   AgentTool,
   AccessPatternResult,
-  AccessContext
+  FileAccessContext
 } from './types.js';
 import { 
   hasAgentTool,
   getRequiredTool,
   AgentTool as AgentToolEnum,
-  createAccessContext
+  createFileAccessContext
 } from './types.js';
 import { AgentRegistry } from './agent-registry.js';
 

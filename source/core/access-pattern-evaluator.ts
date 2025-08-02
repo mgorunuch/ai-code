@@ -2,21 +2,10 @@
  * Access Pattern Evaluator - Handles evaluation of different access pattern types
  */
 
-import { minimatch } from 'minimatch';
 import type {
   AccessPattern,
   AccessContext,
-  AccessPatternResult,
-  AccessPatternObject,
-  AccessPatternFunction,
-  AccessPatternClass,
-  OperationType,
-  FilePath
-} from './types.js';
-import {
-  isAccessPatternObject,
-  isAccessPatternFunction,
-  isAccessPatternClass
+  AccessPatternResult
 } from './types.js';
 
 /**
@@ -71,17 +60,25 @@ export class AccessPatternEvaluator {
     let result: AccessPatternResult;
 
     try {
-      if (isAccessPatternObject(pattern)) {
-        result = await this.evaluateObjectPattern(pattern, context);
-      } else if (isAccessPatternFunction(pattern)) {
-        result = await this.evaluateFunctionPattern(pattern, context);
-      } else if (isAccessPatternClass(pattern)) {
-        result = await this.evaluateClassPattern(pattern, context);
-      } else {
+      // Check if pattern applies to this context
+      const applies = await pattern.appliesTo(context);
+      if (!applies) {
         result = {
           allowed: false,
-          reason: 'Unknown access pattern type',
-          patternId: 'unknown'
+          reason: `Pattern does not apply to this context`,
+          patternId: pattern.id,
+          metadata: { priority: pattern.priority }
+        };
+      } else {
+        result = await pattern.validate(context);
+        // Ensure pattern ID and priority are included
+        result = {
+          ...result,
+          patternId: pattern.id,
+          metadata: {
+            ...result.metadata,
+            priority: pattern.priority
+          }
         };
       }
 
@@ -95,7 +92,7 @@ export class AccessPatternEvaluator {
       const errorResult: AccessPatternResult = {
         allowed: false,
         reason: `Error evaluating access pattern: ${(error as Error).message}`,
-        patternId: this.getPatternId(pattern)
+        patternId: pattern.id
       };
 
       // Don't cache error results
@@ -174,123 +171,13 @@ export class AccessPatternEvaluator {
   }
 
 
-  /**
-   * Evaluate an object-based access pattern
-   */
-  private async evaluateObjectPattern(
-    pattern: AccessPatternObject,
-    context: AccessContext
-  ): Promise<AccessPatternResult> {
-    // Check if pattern applies to this operation
-    if (pattern.operations && !pattern.operations.includes(context.operation)) {
-      return {
-        allowed: false,
-        reason: `Pattern does not apply to operation: ${context.operation}`,
-        patternId: pattern.id,
-        metadata: { priority: pattern.priority }
-      };
-    }
-
-    // Check file patterns if specified
-    if (pattern.filePatterns && pattern.filePatterns.length > 0) {
-      const normalizedPath = this.normalizePath(context.filePath);
-      const matches = pattern.filePatterns.some(filePattern => 
-        minimatch(normalizedPath, filePattern)
-      );
-
-      if (!matches) {
-        return {
-          allowed: false,
-          reason: `File does not match any pattern in: ${pattern.filePatterns.join(', ')}`,
-          patternId: pattern.id,
-          metadata: { priority: pattern.priority }
-        };
-      }
-    }
-
-    // Use custom validation if provided
-    if (pattern.validate) {
-      const customResult = await pattern.validate(context);
-      return {
-        ...customResult,
-        patternId: pattern.id,
-        metadata: {
-          ...customResult.metadata,
-          priority: pattern.priority,
-          fromCustomValidation: true
-        }
-      };
-    }
-
-    // Default allow/deny based on pattern configuration
-    return {
-      allowed: pattern.allow,
-      reason: pattern.allow 
-        ? `Allowed by pattern: ${pattern.description}`
-        : `Denied by pattern: ${pattern.description}`,
-      patternId: pattern.id,
-      metadata: {
-        priority: pattern.priority,
-        config: pattern.config
-      }
-    };
-  }
-
-  /**
-   * Evaluate a function-based access pattern
-   */
-  private async evaluateFunctionPattern(
-    pattern: AccessPatternFunction,
-    context: AccessContext
-  ): Promise<AccessPatternResult> {
-    const result = await pattern(context);
-    
-    return {
-      ...result,
-      patternId: result.patternId || 'function-pattern',
-      metadata: {
-        ...result.metadata,
-        fromFunction: true
-      }
-    };
-  }
-
-  /**
-   * Evaluate a class-based access pattern
-   */
-  private async evaluateClassPattern(
-    pattern: AccessPatternClass,
-    context: AccessContext
-  ): Promise<AccessPatternResult> {
-    // Check if pattern applies to this context
-    if (!pattern.appliesTo(context)) {
-      return {
-        allowed: false,
-        reason: `Pattern does not apply to this context`,
-        patternId: pattern.id,
-        metadata: { priority: pattern.priority }
-      };
-    }
-
-    const result = await pattern.validate(context);
-    
-    return {
-      ...result,
-      patternId: pattern.id,
-      metadata: {
-        ...result.metadata,
-        priority: pattern.priority,
-        fromClass: true
-      }
-    };
-  }
 
   /**
    * Generate a cache key for an access pattern and context
    */
   private generateCacheKey(pattern: AccessPattern, context: AccessContext): string {
     const patternKey = this.getPatternId(pattern);
-    const contextKey = `${context.agentId}:${context.operation}:${context.filePath}`;
+    const contextKey = `${context.requesterId}:${context.operation}:${context.resource}`;
     return `${patternKey}:${contextKey}`;
   }
 
@@ -361,20 +248,6 @@ export class AccessPatternEvaluator {
    * Get a pattern identifier for caching and logging
    */
   private getPatternId(pattern: AccessPattern): string {
-    if (isAccessPatternObject(pattern)) {
-      return pattern.id;
-    } else if (isAccessPatternFunction(pattern)) {
-      return pattern.name || 'anonymous-function';
-    } else if (isAccessPatternClass(pattern)) {
-      return pattern.id;
-    }
-    return 'unknown';
-  }
-
-  /**
-   * Normalize file path for consistent matching
-   */
-  private normalizePath(filePath: string): string {
-    return filePath.replace(/^\/+/, '').replace(/\\/g, '/');
+    return pattern.id;
   }
 }

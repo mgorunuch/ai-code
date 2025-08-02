@@ -10,16 +10,16 @@ import type {
   PermissionResult,
   AgentTool,
   AccessPattern,
-  AccessContext,
+  FileAccessContext,
   AccessPatternResult,
   AccessPatternsConfig
 } from './types.js';
-import { OperationType, AccessPatternClass } from './types.js';
+import { OperationType } from './types.js';
 import { 
   hasAgentTool,
   getRequiredTool,
   AgentTool as AgentToolEnum,
-  createAccessContext
+  createFileAccessContext
 } from './types.js';
 import { AccessPatternEvaluator } from './access-pattern-evaluator.js';
 
@@ -60,8 +60,7 @@ export class AgentRegistry {
     // Register the agent
     this.agents.set(agent.id, agent);
 
-    const patternsInfo = this.getAgentPatternsInfo(agent);
-    console.log(`Agent registered: ${agent.id} (${agent.name}) with tools: [${agent.tools.join(', ')}] and ${patternsInfo}`);
+    console.log(`Agent registered: ${agent.id} (${agent.name}) with tools: [${agent.tools.join(', ')}] and ${agent.accessPatterns.length} access patterns`);
   }
 
   /**
@@ -108,7 +107,7 @@ export class AgentRegistry {
     filePath: FilePath, 
     operation?: OperationType
   ): Promise<AgentCapability | undefined> {
-    const context = createAccessContext(
+    const context = createFileAccessContext(
       filePath,
       operation || OperationType.READ_FILE,
       'system' // System is requesting to find responsible agent
@@ -282,18 +281,6 @@ export class AgentRegistry {
     return patterns;
   }
 
-  /**
-   * Get human-readable info about agent patterns
-   */
-  private getAgentPatternsInfo(agent: AgentCapability): string {
-    const accessCount = agent.accessPatterns.length;
-    const types = new Set(agent.accessPatterns.map(p => {
-      if (typeof p === 'function') return 'function';
-      if (p instanceof AccessPatternClass) return 'class';
-      return 'object';
-    }));
-    return `${accessCount} access patterns (${Array.from(types).join(', ')})`;
-  }
 
   /**
    * Check if an agent can access a file with the new access patterns system
@@ -312,7 +299,7 @@ export class AgentRegistry {
       };
     }
 
-    const context = createAccessContext(filePath, operation, agentId);
+    const context = createFileAccessContext(filePath, operation, agentId);
     const patterns = this.getEffectiveAccessPatterns(agent);
     
     if (patterns.length === 0) {
@@ -344,11 +331,7 @@ export class AgentRegistry {
    * Remove a global access pattern
    */
   removeGlobalPattern(patternId: string): boolean {
-    const index = this.globalPatterns.findIndex(pattern => {
-      if (typeof pattern === 'function') return false;
-      if (pattern instanceof AccessPatternClass) return pattern.id === patternId;
-      return pattern.id === patternId;
-    });
+    const index = this.globalPatterns.findIndex(pattern => pattern.id === patternId);
 
     if (index >= 0) {
       this.globalPatterns.splice(index, 1);

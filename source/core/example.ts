@@ -8,9 +8,17 @@ import {
   DefaultAgents, 
   OperationType, 
   generateRequestId,
-  createAgentCapability
+  createAgentCapability,
+  FileSystemAccessPattern,
+  CustomAccessPattern
 } from './index.js';
-import { AgentTool } from './types.js';
+import { 
+  AgentTool, 
+  AccessPattern, 
+  type FileAccessContext, 
+  type AccessPatternResult,
+  type AgentCapability
+} from './types.js';
 
 async function demonstrateOrchestrationSystem() {
   console.log('=== Core Orchestration System Demo ===\n');
@@ -55,26 +63,67 @@ async function demonstrateOrchestrationSystem() {
     };
   });
 
-  // Register a custom agent for database operations with tools
-  const dbAgent = createAgentCapability(
-    'database-agent',
-    'Database Agent',
-    ['**/database/**', '**/*.sql', '**/migrations/**'],
-    {
-      description: 'Manages database files and operations',
-      tools: [
-        AgentTool.READ_LOCAL,
-        AgentTool.EDIT_FILES,
-        AgentTool.CREATE_FILES,
-        AgentTool.DELETE_FILES,
-        AgentTool.INTER_AGENT_COMMUNICATION
-      ],
-      endpoints: [
-        { name: 'question', description: 'Answer database questions' },
-        { name: 'migrate', description: 'Run database migrations' }
-      ]
+  // Create a custom access pattern for sensitive database operations
+  class DatabaseSecurityPattern extends AccessPattern<FileAccessContext> {
+    readonly id = 'db-security';
+    readonly description = 'Database security access control';
+    readonly priority = 100;
+
+    async appliesTo(context: FileAccessContext): Promise<boolean> {
+      return context.filePath.includes('database') || 
+             context.filePath.endsWith('.sql');
     }
-  );
+
+    async validate(context: FileAccessContext): Promise<AccessPatternResult> {
+      // Restrict deletion of migration files
+      if (context.filePath.includes('migrations') && 
+          context.operation === OperationType.DELETE_FILE) {
+        return {
+          allowed: false,
+          reason: 'Cannot delete migration files',
+          patternId: this.id,
+          metadata: { securityLevel: 'high' }
+        };
+      }
+
+      return {
+        allowed: true,
+        reason: 'Database operation allowed',
+        patternId: this.id
+      };
+    }
+  }
+
+  // Register a custom agent for database operations with class-based patterns
+  const dbAgent: AgentCapability = {
+    id: 'database-agent',
+    name: 'Database Agent',
+    description: 'Manages database files and operations',
+    accessPatterns: [
+      // Use the built-in FileSystemAccessPattern
+      new FileSystemAccessPattern(
+        'db-files',
+        'Database files access',
+        50,
+        ['**/database/**', '**/*.sql', '**/migrations/**'],
+        true, // allow
+        [OperationType.READ_FILE, OperationType.EDIT_FILE, OperationType.WRITE_FILE]
+      ),
+      // Add custom security pattern
+      new DatabaseSecurityPattern()
+    ],
+    tools: [
+      AgentTool.READ_LOCAL,
+      AgentTool.EDIT_FILES,
+      AgentTool.CREATE_FILES,
+      AgentTool.DELETE_FILES,
+      AgentTool.INTER_AGENT_COMMUNICATION
+    ],
+    endpoints: [
+      { name: 'question', description: 'Answer database questions' },
+      { name: 'migrate', description: 'Run database migrations' }
+    ]
+  };
 
   orchestrator.registerAgent(dbAgent, async (request) => {
     console.log(`Database agent handling: ${request.type} for ${request.filePath}`);
@@ -140,26 +189,9 @@ async function demonstrateOrchestrationSystem() {
   // 5. Demonstrate inter-agent communication
   console.log('\n5. Testing inter-agent communication...');
   
-  // Register question handlers
-  orchestrator.communicationSystem.registerQuestionHandler('react-agent', async (question) => {
-    return {
-      answer: `React agent response to: "${question.question}"`,
-      confidence: 0.9,
-      supportingInfo: {
-        referencedFiles: question.context?.filePaths || []
-      }
-    };
-  });
-
-  orchestrator.communicationSystem.registerQuestionHandler('typescript-agent', async (question) => {
-    return {
-      answer: `TypeScript agent response to: "${question.question}"`,
-      confidence: 0.85,
-      supportingInfo: {
-        referencedFiles: question.context?.filePaths || []
-      }
-    };
-  });
+  // Note: In a real implementation, question handlers would be registered through
+  // the agent's handler function passed to registerAgent()
+  console.log('Question handlers would be registered through agent handlers');
 
   // Ask a question to a specific agent
   try {
@@ -193,33 +225,56 @@ async function demonstrateOrchestrationSystem() {
   }
 
   // 6. Demonstrate permission rules with tools
-  console.log('\n6. Adding custom permission rule with tools...');
+  console.log('\n6. Permission rules would be added through public API...');
+  console.log('Custom rule example: Global config file read access');
   
-  orchestrator.permissionSystem.addPermissionRule({
-    id: 'allow-global-config-read',
-    description: 'Allow all agents to read config files globally',
-    agentId: '*', // Apply to all agents
-    filePattern: '**/*.config.*',
-    operations: [OperationType.READ_FILE],
-    tools: [AgentTool.READ_GLOBAL], // Specific tool requirement
-    allow: true,
-    priority: 100
-  });
+  // 7. Demonstrate custom access pattern for non-file resources
+  console.log('\n7. Testing custom access patterns...');
   
-  console.log('Custom rule added: Global config file read access');
+  // Create a custom pattern for API endpoint access (demonstrating extensibility)
+  const apiAccessPattern = new CustomAccessPattern(
+    'api-rate-limit',
+    'API rate limiting pattern',
+    90,
+    // appliesTo function
+    async (context) => {
+      // This could check any type of resource, not just files
+      return context.resource && typeof context.resource === 'string' && 
+             context.resource.startsWith('/api/');
+    },
+    // validate function
+    async (context) => {
+      // Example: Rate limiting logic
+      const requestCount = context.metadata?.requestCount || 0;
+      if (requestCount > 100) {
+        return {
+          allowed: false,
+          reason: 'Rate limit exceeded',
+          metadata: { limit: 100, current: requestCount }
+        };
+      }
+      
+      return {
+        allowed: true,
+        reason: 'Within rate limit',
+        metadata: { limit: 100, current: requestCount }
+      };
+    }
+  );
   
-  // 7. Show system statistics
-  console.log('\n7. System statistics:');
+  console.log('Created custom API rate limiting pattern');
+  
+  // 8. Show system statistics
+  console.log('\n8. System statistics:');
   const stats = orchestrator.getStats();
   console.log(`- Total agents: ${stats.totalAgents}`);
   console.log(`- Total requests: ${stats.totalRequests}`);
   console.log(`- Total responses: ${stats.totalResponses}`);
   
-  // Show effective permissions for agents
-  console.log('\n8. Effective permissions for agents:');
+  // Show registered agents
+  console.log('\n9. Registered agents:');
   for (const agent of orchestrator.getAgents()) {
-    const permissions = orchestrator.permissionSystem.getEffectivePermissions(agent.id);
-    console.log(`${agent.id}: tools=[${permissions.tools.join(', ')}], custom rules=${permissions.customRules.length}`);
+    console.log(`${agent.id}: ${agent.name} - ${agent.tools.length} tools, ${agent.accessPatterns.length} access patterns`);
   }
   
   console.log('\n=== Core Orchestration System Demo Complete ===');

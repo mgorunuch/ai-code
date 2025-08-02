@@ -7,15 +7,16 @@ export type DirectoryPattern = string;
 export type FilePath = string;
 
 /**
- * Context information for access pattern validation
+ * Generic context for access pattern validation
+ * This can be extended for specific resource types
  */
-export interface AccessContext {
-  /** The file path being accessed */
-  filePath: FilePath;
+export interface AccessContext<TResource = any> {
+  /** The resource being accessed (e.g., file path, table name, endpoint) */
+  resource: TResource;
   /** The operation being performed */
-  operation: OperationType;
-  /** The agent requesting access */
-  agentId: AgentId;
+  operation: string;
+  /** The agent or entity requesting access */
+  requesterId: string;
   /** Additional metadata */
   metadata?: Record<string, any>;
   /** Timestamp of the request */
@@ -37,58 +38,55 @@ export interface AccessPatternResult {
 }
 
 /**
- * Function-based access pattern validator
+ * Abstract base class for all access pattern implementations
  */
-export type AccessPatternFunction = (context: AccessContext) => AccessPatternResult | Promise<AccessPatternResult>;
-
-/**
- * Object-based access pattern configuration
- */
-export interface AccessPatternObject {
-  /** Unique identifier for this pattern */
-  id: string;
-  /** Human-readable description */
-  description: string;
-  /** File patterns to match (glob patterns) */
-  filePatterns?: string[];
-  /** Operations this pattern applies to */
-  operations?: OperationType[];
-  /** Custom validation function */
-  validate?: AccessPatternFunction;
-  /** Whether this pattern allows or denies access */
-  allow: boolean;
-  /** Priority of this pattern (higher = more important) */
-  priority: number;
-  /** Additional configuration */
-  config?: Record<string, any>;
-}
-
-/**
- * Abstract base class for access pattern implementations
- */
-export abstract class AccessPatternClass {
-  abstract id: string;
-  abstract description: string;
-  abstract priority: number;
+export abstract class AccessPattern<TContext extends AccessContext = AccessContext> {
+  abstract readonly id: string;
+  abstract readonly description: string;
+  abstract readonly priority: number;
 
   /**
    * Validate access for the given context
    */
-  abstract validate(context: AccessContext): AccessPatternResult | Promise<AccessPatternResult>;
+  abstract validate(context: TContext): AccessPatternResult | Promise<AccessPatternResult>;
 
   /**
    * Check if this pattern applies to the given context
    */
-  abstract appliesTo(context: AccessContext): boolean;
+  abstract appliesTo(context: TContext): boolean | Promise<boolean>;
 }
 
 /**
- * Union type for all supported access pattern types
+ * Specialized context for file system access
  */
-export type AccessPattern = 
-  | AccessPatternObject       // Object configuration
-  | AccessPatternFunction     // Function validator
-  | AccessPatternClass;       // Class instance
+export interface FileAccessContext extends AccessContext<FilePath> {
+  /** The file path being accessed */
+  filePath: FilePath;
+  /** The file operation being performed */
+  operation: OperationType;
+  /** The agent requesting access */
+  agentId: AgentId;
+}
+
+/**
+ * Helper function to create a file access context
+ */
+export function createFileAccessContext(
+  filePath: FilePath,
+  operation: OperationType,
+  agentId: AgentId,
+  metadata?: Record<string, any>
+): FileAccessContext {
+  return {
+    resource: filePath,
+    filePath,
+    operation,
+    requesterId: agentId,
+    agentId,
+    metadata,
+    timestamp: new Date()
+  };
+}
 
 /**
  * Available tools that agents can be granted access to
@@ -128,7 +126,7 @@ export interface AgentCapability {
   name: string;
   /** Description of the agent's purpose and capabilities */
   description: string;
-  /** Access patterns this agent is responsible for - supports objects, functions, and classes */
+  /** Access patterns this agent is responsible for */
   accessPatterns: AccessPattern[];
   /** Tools this agent has access to */
   tools: AgentTool[];
@@ -280,47 +278,6 @@ export function getRequiredTool(
     return AgentTool.READ_GLOBAL;
   }
   return OPERATION_TOOL_MAP[operation];
-}
-
-
-/**
- * Helper function to check if a pattern is an object configuration
- */
-export function isAccessPatternObject(pattern: AccessPattern): pattern is AccessPatternObject {
-  return typeof pattern === 'object' && pattern !== null && 'id' in pattern && 'allow' in pattern;
-}
-
-/**
- * Helper function to check if a pattern is a function
- */
-export function isAccessPatternFunction(pattern: AccessPattern): pattern is AccessPatternFunction {
-  return typeof pattern === 'function';
-}
-
-/**
- * Helper function to check if a pattern is a class instance
- */
-export function isAccessPatternClass(pattern: AccessPattern): pattern is AccessPatternClass {
-  return pattern instanceof AccessPatternClass;
-}
-
-
-/**
- * Helper function to create an access context
- */
-export function createAccessContext(
-  filePath: FilePath,
-  operation: OperationType,
-  agentId: AgentId,
-  metadata?: Record<string, any>
-): AccessContext {
-  return {
-    filePath,
-    operation,
-    agentId,
-    metadata,
-    timestamp: new Date()
-  };
 }
 
 
@@ -477,7 +434,7 @@ export interface ModelSelectionResult {
  * Access patterns configuration
  */
 export interface AccessPatternsConfig {
-  /** Enable the new access patterns system */
+  /** Enable the access patterns system */
   enabled: boolean;
   /** Global access patterns that apply to all agents */
   globalPatterns?: AccessPattern[];
