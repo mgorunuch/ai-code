@@ -15,7 +15,9 @@ import type {
 import { 
   hasAgentToolForOperation,
   getToolsForOperation,
-  createFileAccessContext
+  createFileAccessContext,
+  getRequiredTool,
+  AgentToolEnum
 } from './types.js';
 import { AgentRegistry } from './agent-registry.js';
 
@@ -30,8 +32,8 @@ export interface PermissionRule {
   filePattern: string;
   /** Operations this rule covers */
   operations: OperationType[];
-  /** Tools this rule covers */
-  tools?: AgentTool[];
+  /** Tools this rule covers (legacy enum for backward compatibility) */
+  tools?: AgentToolEnum[];
   /** Whether this rule allows or denies access */
   allow: boolean;
   /** Priority of this rule (higher = more important) */
@@ -372,7 +374,7 @@ export class PermissionSystem {
         reason: topRule.allow 
           ? `Allowed by custom rule: ${topRule.description}`
           : `Denied by custom rule: ${topRule.description}`,
-        requiredTool
+        requiredTool: undefined // Custom rules use legacy enum, not modern AgentTool
       },
       appliedRules: [topRule]
     };
@@ -389,7 +391,7 @@ export class PermissionSystem {
     const rules: PermissionRule[] = [];
     const requiredTool = getRequiredTool(operation, filePath);
 
-    for (const rule of this.customRules.values()) {
+    for (const rule of Array.from(this.customRules.values())) {
       // Check if rule applies to this agent
       if (rule.agentId !== agentId && rule.agentId !== '*') {
         continue;

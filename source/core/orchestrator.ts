@@ -434,6 +434,7 @@ export class CoreOrchestrator extends EventEmitter {
 
     return {
       totalAgents: agents.length,
+      totalModernAgents: agents.length, // All agents are now modern tool-based agents
       totalRequests: this.requestHistory.size,
       totalResponses: this.responseHistory.size,
       communicationStats: this.communicationSystem.getStats(),

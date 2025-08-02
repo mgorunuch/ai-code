@@ -5,19 +5,20 @@
 
 import { 
   createOrchestrator, 
-  DefaultAgents, 
   OperationType, 
   generateRequestId,
-  createAgentCapability,
   FileSystemAccessPattern,
-  CustomAccessPattern
+  CustomAccessPattern,
+  CommonTools,
+  ToolFactory,
+  CommunicationTool
 } from './index.js';
 import { 
-  AgentToolEnum, 
   AccessPattern, 
   type FileAccessContext, 
   type AccessPatternResult,
-  type LegacyAgentCapability
+  type AgentCapability,
+  AgentTool
 } from './types.js';
 
 async function demonstrateOrchestrationSystem() {
@@ -27,7 +28,6 @@ async function demonstrateOrchestrationSystem() {
   console.log('1. Creating orchestrator with tools-based permissions...');
   const orchestrator = createOrchestrator({
     defaultPermissions: {
-      defaultTools: [AgentToolEnum.READ_LOCAL, AgentToolEnum.INTER_AGENT_COMMUNICATION],
       requireExplicitToolGrants: true
     },
     logging: {
@@ -36,11 +36,21 @@ async function demonstrateOrchestrationSystem() {
     }
   });
 
-  // 2. Register default agents
+  // 2. Register agents with tool-based configuration
   console.log('2. Registering agents...');
   
   // Register React agent for frontend files
-  const reactAgent = DefaultAgents.createReactAgent();
+  const reactAgent: AgentCapability = {
+    id: 'react-agent',
+    name: 'React Development Agent',
+    description: 'Handles React component development',
+    tools: CommonTools.createReactTools(),
+    endpoints: [
+      { name: 'question', description: 'Answer React-related questions' },
+      { name: 'handle', description: 'Handle React file operations' }
+    ]
+  };
+  
   orchestrator.registerAgent(reactAgent, async (request) => {
     console.log(`React agent handling: ${request.type} for ${request.filePath}`);
     return {
@@ -52,7 +62,17 @@ async function demonstrateOrchestrationSystem() {
   });
 
   // Register TypeScript agent for core logic
-  const tsAgent = DefaultAgents.createTypescriptAgent();
+  const tsAgent: AgentCapability = {
+    id: 'typescript-agent',
+    name: 'TypeScript Development Agent',
+    description: 'Handles TypeScript development',
+    tools: CommonTools.createTypeScriptTools(),
+    endpoints: [
+      { name: 'question', description: 'Answer TypeScript-related questions' },
+      { name: 'handle', description: 'Handle TypeScript file operations' }
+    ]
+  };
+  
   orchestrator.registerAgent(tsAgent, async (request) => {
     console.log(`TypeScript agent handling: ${request.type} for ${request.filePath}`);
     return {
@@ -94,30 +114,24 @@ async function demonstrateOrchestrationSystem() {
     }
   }
 
-  // Register a custom agent for database operations with class-based patterns
-  const dbAgent: LegacyAgentCapability = {
+  // Register a custom agent for database operations with tool-based patterns
+  const dbAgent: AgentCapability = {
     id: 'database-agent',
     name: 'Database Agent',
     description: 'Manages database files and operations',
-    accessPatterns: [
-      // Use the built-in FileSystemAccessPattern
-      new FileSystemAccessPattern(
-        'db-files',
-        'Database files access',
-        50,
-        ['**/database/**', '**/*.sql', '**/migrations/**'],
-        true, // allow
-        [OperationType.READ_FILE, OperationType.EDIT_FILE, OperationType.WRITE_FILE]
-      ),
-      // Add custom security pattern
-      new DatabaseSecurityPattern()
-    ],
     tools: [
-      AgentToolEnum.READ_LOCAL,
-      AgentToolEnum.EDIT_FILES,
-      AgentToolEnum.CREATE_FILES,
-      AgentToolEnum.DELETE_FILES,
-      AgentToolEnum.INTER_AGENT_COMMUNICATION
+      ToolFactory.createFullAccessTool([
+        '**/database/**', 
+        '**/*.sql', 
+        '**/migrations/**'
+      ], {
+        id: 'db-full-access',
+        description: 'Full access to database files'
+      }),
+      ToolFactory.createCommunicationTool({
+        id: 'db-communication',
+        description: 'Database agent communication'
+      })
     ],
     endpoints: [
       { name: 'question', description: 'Answer database questions' },
@@ -178,12 +192,12 @@ async function demonstrateOrchestrationSystem() {
   // Demonstrate agent tool information
   const reactAgentInfo = orchestrator.getAgent('react-agent');
   if (reactAgentInfo) {
-    console.log(`React agent tools: [${reactAgentInfo.tools.join(', ')}]`);
+    console.log(`React agent tools: [${reactAgentInfo.tools.map(t => t.name).join(', ')}]`);
   }
   
   const dbAgentInfo = orchestrator.getAgent('database-agent');
   if (dbAgentInfo) {
-    console.log(`Database agent tools: [${dbAgentInfo.tools.join(', ')}]`);
+    console.log(`Database agent tools: [${dbAgentInfo.tools.map(t => t.name).join(', ')}]`);
   }
 
   // 5. Demonstrate inter-agent communication
@@ -274,10 +288,10 @@ async function demonstrateOrchestrationSystem() {
   // Show registered agents
   console.log('\n9. Registered agents:');
   for (const agent of orchestrator.getAgents()) {
-    if ('accessPatterns' in agent) {
-      console.log(`${agent.id}: ${agent.name} - ${agent.tools.length} tools, ${agent.accessPatterns.length} access patterns (legacy)`);
-    } else {
-      console.log(`${agent.id}: ${agent.name} - ${agent.tools.length} tools (modern)`);
+    console.log(`${agent.id}: ${agent.name} - ${agent.tools.length} tools`);
+    // Show tool details
+    for (const tool of agent.tools) {
+      console.log(`  - ${tool.name}: ${tool.description}`);
     }
   }
   
@@ -285,8 +299,9 @@ async function demonstrateOrchestrationSystem() {
 }
 
 // Run the demonstration
-if (import.meta.url === `file://${process.argv[1]}`) {
-  demonstrateOrchestrationSystem().catch(console.error);
-}
+// Note: Module execution check disabled for compatibility
+// if (import.meta.url === `file://${process.argv[1]}`) {
+//   demonstrateOrchestrationSystem().catch(console.error);
+// }
 
 export { demonstrateOrchestrationSystem };

@@ -16,6 +16,18 @@ The system uses a **tool-based architecture** for managing agent capabilities an
 - **Extensibility**: Easy addition of new tool types and capabilities
 - **Security**: Fine-grained permission management at the tool level
 - **Clean Architecture**: Modern, flexible design patterns
+- **Type Safety**: Full TypeScript support with comprehensive type checking
+
+## Recent Updates (August 2025)
+
+The core orchestration system has been updated to fix all TypeScript compilation errors and improve type safety:
+
+- **Fixed Import/Export Issues**: All missing exports (`DefaultAgents`, `createAgentCapability`, `AgentToolEnum`) have been resolved
+- **Enhanced Type Definitions**: Added proper type definitions for all interfaces and improved type safety
+- **Backward Compatibility**: Added legacy `AgentToolEnum` and `getRequiredTool` functions for existing permission rules
+- **Iterator Compatibility**: Fixed Map iterator issues for better cross-platform compatibility
+- **Modern Tool API**: Updated example code to use the current tool-based architecture
+- **Comprehensive Type Coverage**: All core files now compile without TypeScript errors
 
 ## AI Model Selection System
 

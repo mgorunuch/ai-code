@@ -222,7 +222,7 @@ export class AccessPatternEvaluator {
     const now = Date.now();
     const expiredKeys: string[] = [];
 
-    for (const [key, cached] of this.cache.entries()) {
+    for (const [key, cached] of Array.from(this.cache.entries())) {
       if (now - cached.timestamp > this.cacheExpiryMs) {
         expiredKeys.push(key);
       }

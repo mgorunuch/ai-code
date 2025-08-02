@@ -115,7 +115,7 @@ export class AgentRegistry {
 
     let bestMatch: { agent: AgentCapability; result: AccessPatternResult } | undefined;
 
-    for (const agent of this.agents.values()) {
+    for (const agent of Array.from(this.agents.values())) {
       // Check if agent has tools that can handle this operation
       if (operation && !hasAgentToolForOperation(agent, operation)) {
         continue;
@@ -157,7 +157,7 @@ export class AgentRegistry {
     const questionAgents: AgentCapability[] = [];
 
     // Check modern agents first
-    for (const agent of this.agents.values()) {
+    for (const agent of Array.from(this.agents.values())) {
       // Check if agent has a question endpoint
       const hasQuestionEndpoint = agent.endpoints.some(ep => ep.name === 'question');
       if (!hasQuestionEndpoint) {

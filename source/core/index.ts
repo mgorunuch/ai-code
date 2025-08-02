@@ -31,7 +31,15 @@ export type {
 } from './types.js';
 
 // Re-export enums for convenience
-export { OperationType, AIModel } from './types.js';
+export { OperationType, AIModel, AgentToolEnum } from './types.js';
+
+// Export helper functions
+export { 
+  hasAgentToolForOperation,
+  getToolsForOperation,
+  getRequiredTool,
+  createFileAccessContext
+} from './types.js';
 
 // Export tool-based system
 export * from './tools.js';

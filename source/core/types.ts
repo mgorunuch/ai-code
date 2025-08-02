@@ -299,6 +299,40 @@ export function getToolsForOperation(agent: AgentCapability, operation: Operatio
   return agent.tools.filter(tool => tool.canHandle(operation));
 }
 
+/**
+ * Legacy agent tool enum for backward compatibility with custom permission rules
+ */
+export enum AgentToolEnum {
+  READ_LOCAL = 'read_local',
+  EDIT_FILES = 'edit_files',
+  CREATE_FILES = 'create_files',
+  DELETE_FILES = 'delete_files',
+  CREATE_DIRECTORIES = 'create_directories',
+  INTER_AGENT_COMMUNICATION = 'inter_agent_communication'
+}
+
+/**
+ * Helper function to get the required tool type for an operation (legacy compatibility)
+ */
+export function getRequiredTool(operation: OperationType, filePath?: FilePath): AgentToolEnum {
+  switch (operation) {
+    case OperationType.READ_FILE:
+      return AgentToolEnum.READ_LOCAL;
+    case OperationType.EDIT_FILE:
+      return AgentToolEnum.EDIT_FILES;
+    case OperationType.WRITE_FILE:
+      return AgentToolEnum.CREATE_FILES;
+    case OperationType.DELETE_FILE:
+      return AgentToolEnum.DELETE_FILES;
+    case OperationType.CREATE_DIRECTORY:
+      return AgentToolEnum.CREATE_DIRECTORIES;
+    case OperationType.QUESTION:
+      return AgentToolEnum.INTER_AGENT_COMMUNICATION;
+    default:
+      return AgentToolEnum.READ_LOCAL;
+  }
+}
+
 
 
 /**
