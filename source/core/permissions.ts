@@ -13,9 +13,8 @@ import type {
   FileAccessContext
 } from './types.js';
 import { 
-  hasAgentTool,
-  getRequiredTool,
-  AgentTool as AgentToolEnum,
+  hasAgentToolForOperation,
+  getToolsForOperation,
   createFileAccessContext
 } from './types.js';
 import { AgentRegistry } from './agent-registry.js';
@@ -69,15 +68,7 @@ export class PermissionSystem {
     operation: OperationType,
     filePath?: FilePath
   ): PermissionResult {
-    // For synchronous calls, use legacy system
-    const agent = this.agentRegistry.getAgent(agentId);
-    if (!agent) {
-      return this.logAndReturn({
-        allowed: false,
-        reason: `Agent ${agentId} not found`
-      }, agentId, operation, filePath, []);
-    }
-
+    // Use the registry's unified permission checking
     const registryResult = this.agentRegistry.checkPermissions(agentId, operation, filePath);
     
     // Check custom rules
@@ -98,7 +89,7 @@ export class PermissionSystem {
   }
 
   /**
-   * Check if an agent has permission to perform an operation (asynchronous version with access patterns)
+   * Check if an agent has permission to perform an operation (asynchronous version with tool-based access patterns)
    */
   async checkPermissionAsync(
     agentId: AgentId,
@@ -107,41 +98,58 @@ export class PermissionSystem {
   ): Promise<PermissionResult> {
     const startTime = Date.now();
 
-    // Get the agent
     const agent = this.agentRegistry.getAgent(agentId);
-    if (!agent) {
-      return this.logAndReturn({
-        allowed: false,
-        reason: `Agent ${agentId} not found`
-      }, agentId, operation, filePath, []);
+    if (agent) {
+      return this.checkModernAgentPermissionAsync(agent, operation, filePath);
     }
 
-    // For operations that don't involve files, use legacy permission checking
+    return this.logAndReturn({
+      allowed: false,
+      reason: `Agent ${agentId} not found`
+    }, agentId, operation, filePath, []);
+  }
+
+  /**
+   * Check permissions for agent with tool-based access patterns
+   */
+  private async checkModernAgentPermissionAsync(
+    agent: AgentCapability,
+    operation: OperationType,
+    filePath?: FilePath
+  ): Promise<PermissionResult> {
+    // For operations that don't involve files, check if agent has tools that can handle it
     if (!filePath) {
-      const registryResult = this.agentRegistry.checkPermissions(agentId, operation, filePath);
-      return this.logAndReturn(registryResult, agentId, operation, filePath, []);
+      const hasCapableTool = hasAgentToolForOperation(agent, operation);
+      const capableTools = getToolsForOperation(agent, operation);
+      
+      return this.logAndReturn({
+        allowed: hasCapableTool,
+        reason: hasCapableTool ? undefined : `Agent ${agent.id} has no tools that can handle ${operation}`,
+        requiredTool: capableTools[0],
+        availableTools: agent.tools
+      }, agent.id, operation, filePath, []);
     }
 
-    // Try the new access patterns system first
+    // For file operations, use tool-based access checking
     try {
-      const accessResult = await this.agentRegistry.checkAgentAccess(agentId, filePath, operation);
+      const accessResult = await this.agentRegistry.checkAgentAccess(agent.id, filePath, operation);
       
       // Convert access pattern result to permission result
       let permissionResult: PermissionResult = {
         allowed: accessResult.allowed,
         reason: accessResult.reason,
-        requiredTool: getRequiredTool(operation, filePath),
+        requiredTool: getToolsForOperation(agent, operation)[0],
         availableTools: agent.tools
       };
 
-      // If access patterns deny, check custom rules for overrides
+      // Check custom rules for overrides
       if (!accessResult.allowed) {
-        const customResult = this.checkCustomRules(agentId, operation, filePath);
+        const customResult = this.checkCustomRules(agent.id, operation, filePath);
         if (customResult.overrideResult) {
           permissionResult = customResult.overrideResult;
           return this.logAndReturn(
             permissionResult,
-            agentId,
+            agent.id,
             operation,
             filePath,
             customResult.appliedRules
@@ -151,12 +159,12 @@ export class PermissionSystem {
 
       // If access patterns allow, check custom rules for denials
       if (accessResult.allowed) {
-        const customResult = this.checkCustomRules(agentId, operation, filePath);
+        const customResult = this.checkCustomRules(agent.id, operation, filePath);
         if (customResult.overrideResult && !customResult.overrideResult.allowed) {
           permissionResult = customResult.overrideResult;
           return this.logAndReturn(
             permissionResult,
-            agentId,
+            agent.id,
             operation,
             filePath,
             customResult.appliedRules
@@ -164,39 +172,24 @@ export class PermissionSystem {
         }
       }
 
-      // Check if agent has the required tools even if access patterns allow
-      const requiredTool = getRequiredTool(operation, filePath);
-      if (!hasAgentTool(agent, requiredTool)) {
-        permissionResult = {
-          allowed: false,
-          reason: `Agent ${agentId} lacks required tool: ${requiredTool}`,
-          requiredTool,
-          availableTools: agent.tools
-        };
-      }
-
-      return this.logAndReturn(permissionResult, agentId, operation, filePath, []);
+      return this.logAndReturn(permissionResult, agent.id, operation, filePath, []);
 
     } catch (error) {
-      // Fallback to legacy system if access patterns fail
-      console.warn(`Access patterns failed for ${agentId}:${operation}:${filePath}, falling back to legacy system:`, error);
-      const registryResult = this.agentRegistry.checkPermissions(agentId, operation, filePath);
+      console.warn(`Tool-based access check failed for ${agent.id}:${operation}:${filePath}:`, error);
       
-      // Still check custom rules for legacy fallback
-      const customResult = this.checkCustomRules(agentId, operation, filePath);
-      if (customResult.overrideResult) {
-        return this.logAndReturn(
-          customResult.overrideResult,
-          agentId,
-          operation,
-          filePath,
-          customResult.appliedRules
-        );
-      }
-
-      return this.logAndReturn(registryResult, agentId, operation, filePath, []);
+      // Fallback: check if agent has capable tools
+      const hasCapableTool = hasAgentToolForOperation(agent, operation);
+      const capableTools = getToolsForOperation(agent, operation);
+      
+      return this.logAndReturn({
+        allowed: hasCapableTool,
+        reason: hasCapableTool ? undefined : `Agent ${agent.id} has no tools that can handle ${operation}`,
+        requiredTool: capableTools[0],
+        availableTools: agent.tools
+      }, agent.id, operation, filePath, []);
     }
   }
+
 
   /**
    * Add a custom permission rule
@@ -254,9 +247,9 @@ export class PermissionSystem {
       };
     }
 
-    // Check if agent has required tools for this operation
-    const requiredTool = getRequiredTool(operation, directoryPath);
-    if (hasAgentTool(agent, requiredTool)) {
+    // Check if agent has tools that can handle this operation
+    const hasCapableTool = hasAgentToolForOperation(agent, operation);
+    if (hasCapableTool) {
       return { allowed: true };
     }
 
@@ -274,14 +267,14 @@ export class PermissionSystem {
     customRules: PermissionRule[];
   } {
     const agent = this.agentRegistry.getAgent(agentId);
-    if (!agent) {
-      throw new Error(`Agent ${agentId} not found`);
+    if (agent) {
+      return {
+        tools: agent.tools,
+        customRules: this.getPermissionRules(agentId)
+      };
     }
 
-    return {
-      tools: agent.tools,
-      customRules: this.getPermissionRules(agentId),
-    };
+    throw new Error(`Agent ${agentId} not found`);
   }
 
   /**
@@ -369,6 +362,8 @@ export class PermissionSystem {
     
     // Apply the highest priority rule
     const topRule = sortedRules[0];
+    
+    // For custom rules, use legacy tool format
     const requiredTool = getRequiredTool(operation, filePath);
     
     return {
@@ -405,7 +400,7 @@ export class PermissionSystem {
         continue;
       }
       
-      // Check if rule applies to this tool (if tools are specified)
+      // Check if rule applies to this tool (if tools are specified) - legacy tool enum only
       if (rule.tools && rule.tools.length > 0 && !rule.tools.includes(requiredTool)) {
         continue;
       }
@@ -454,7 +449,7 @@ export class PermissionSystem {
       throw new Error('Rule must specify at least one operation');
     }
     
-    // Validate tools if specified
+    // Validate tools if specified (legacy enum tools only)
     if (rule.tools && Array.isArray(rule.tools)) {
       for (const tool of rule.tools) {
         if (!Object.values(AgentToolEnum).includes(tool)) {

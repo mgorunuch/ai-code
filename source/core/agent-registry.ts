@@ -16,9 +16,8 @@ import type {
 } from './types.js';
 import { OperationType } from './types.js';
 import { 
-  hasAgentTool,
-  getRequiredTool,
-  AgentTool as AgentToolEnum,
+  hasAgentToolForOperation,
+  getToolsForOperation,
   createFileAccessContext
 } from './types.js';
 import { AccessPatternEvaluator } from './access-pattern-evaluator.js';
@@ -60,23 +59,22 @@ export class AgentRegistry {
     // Register the agent
     this.agents.set(agent.id, agent);
 
-    console.log(`Agent registered: ${agent.id} (${agent.name}) with tools: [${agent.tools.join(', ')}] and ${agent.accessPatterns.length} access patterns`);
+    const toolNames = agent.tools.map(tool => tool.name || tool.id).join(', ');
+    console.log(`Agent registered: ${agent.id} (${agent.name}) with tools: [${toolNames}]`);
   }
+
 
   /**
    * Unregister an agent
    */
   unregisterAgent(agentId: AgentId): boolean {
-    const agent = this.agents.get(agentId);
-    if (!agent) {
-      return false;
+    if (this.agents.has(agentId)) {
+      this.agents.delete(agentId);
+      console.log(`Agent unregistered: ${agentId}`);
+      return true;
     }
 
-    // Remove agent
-    this.agents.delete(agentId);
-
-    console.log(`Agent unregistered: ${agentId}`);
-    return true;
+    return false;
   }
 
   /**
@@ -86,6 +84,7 @@ export class AgentRegistry {
     return this.agents.get(agentId);
   }
 
+
   /**
    * Get all registered agents
    */
@@ -93,17 +92,18 @@ export class AgentRegistry {
     return Array.from(this.agents.values());
   }
 
+
   /**
-   * Find the responsible agent for a given file path using access patterns
+   * Find the responsible agent for a given file path using tool-based access patterns
    */
   async findResponsibleAgent(filePath: FilePath, operation?: OperationType): Promise<AgentCapability | undefined> {
-    return this.findResponsibleAgentWithAccessPatterns(filePath, operation);
+    return await this.findResponsibleAgentWithToolPatterns(filePath, operation);
   }
 
   /**
-   * Find responsible agent using the new access patterns system
+   * Find responsible agent using tool-based access patterns
    */
-  async findResponsibleAgentWithAccessPatterns(
+  private async findResponsibleAgentWithToolPatterns(
     filePath: FilePath, 
     operation?: OperationType
   ): Promise<AgentCapability | undefined> {
@@ -116,18 +116,31 @@ export class AgentRegistry {
     let bestMatch: { agent: AgentCapability; result: AccessPatternResult } | undefined;
 
     for (const agent of this.agents.values()) {
-      const patterns = this.getEffectiveAccessPatterns(agent);
-      const results = await this.accessPatternEvaluator.evaluatePatterns(patterns, context);
-      
-      // Find the best matching result for this agent
-      const bestResult = this.accessPatternEvaluator.getBestMatch(results.filter(r => r.allowed));
-      
-      if (bestResult) {
-        const priority = (bestResult.metadata?.priority as number) || 0;
-        const currentPriority = (bestMatch?.result.metadata?.priority as number) || 0;
-        
-        if (!bestMatch || priority > currentPriority) {
-          bestMatch = { agent, result: bestResult };
+      // Check if agent has tools that can handle this operation
+      if (operation && !hasAgentToolForOperation(agent, operation)) {
+        continue;
+      }
+
+      // Get tools that can handle this operation
+      const capableTools = operation 
+        ? getToolsForOperation(agent, operation)
+        : agent.tools;
+
+      // Check access for each capable tool
+      for (const tool of capableTools) {
+        try {
+          const result = await tool.checkAccess(context);
+          
+          if (result.allowed) {
+            const priority = (result.metadata?.priority as number) || 0;
+            const currentPriority = (bestMatch?.result.metadata?.priority as number) || 0;
+            
+            if (!bestMatch || priority > currentPriority) {
+              bestMatch = { agent, result };
+            }
+          }
+        } catch (error) {
+          console.warn(`Error checking tool access for ${tool.id}:`, error);
         }
       }
     }
@@ -136,16 +149,24 @@ export class AgentRegistry {
   }
 
 
+
   /**
    * Find agents that can answer questions about a given domain
    */
   async findQuestionAgents(context?: { filePaths?: FilePath[]; domain?: string }): Promise<AgentCapability[]> {
     const questionAgents: AgentCapability[] = [];
 
+    // Check modern agents first
     for (const agent of this.agents.values()) {
       // Check if agent has a question endpoint
       const hasQuestionEndpoint = agent.endpoints.some(ep => ep.name === 'question');
       if (!hasQuestionEndpoint) {
+        continue;
+      }
+
+      // Check if agent has communication tools
+      const hasCommunicationTool = agent.tools.some(tool => tool.canHandle(OperationType.QUESTION));
+      if (!hasCommunicationTool) {
         continue;
       }
 
@@ -169,6 +190,9 @@ export class AgentRegistry {
       }
     }
 
+    // TODO: Also check legacy agents and convert them
+    // For now, we'll only return modern agents
+
     return questionAgents;
   }
 
@@ -181,109 +205,64 @@ export class AgentRegistry {
     filePath?: FilePath
   ): PermissionResult {
     const agent = this.agents.get(agentId);
-    if (!agent) {
-      return {
-        allowed: false,
-        reason: `Agent ${agentId} not found`
-      };
+    if (agent) {
+      return this.checkModernAgentPermissions(agent, operation, filePath);
     }
 
-    // For non-file operations, check if agent has communication tool
-    if (!filePath) {
-      const requiredTool = getRequiredTool(operation);
-      const hasRequiredTool = hasAgentTool(agent, requiredTool);
-      
-      return {
-        allowed: hasRequiredTool,
-        reason: hasRequiredTool ? undefined : `Agent ${agentId} lacks required tool: ${requiredTool}`,
-        requiredTool,
-        availableTools: agent.tools
-      };
-    }
-
-    // For permission checking, we need to handle this differently since findResponsibleAgent is now async
-    // For now, we'll use a simpler approach
-    const requiredTool = getRequiredTool(operation, filePath, false);
-    
-    // Check if agent has the required tool
-    const hasRequiredTool = hasAgentTool(agent, requiredTool);
-    
-    // Special case for read operations
-    if (operation === OperationType.READ_FILE) {
-      // Agent can read files with READ_LOCAL tool
-      if (hasAgentTool(agent, AgentToolEnum.READ_LOCAL)) {
-        return { 
-          allowed: true, 
-          requiredTool: AgentToolEnum.READ_LOCAL,
-          availableTools: agent.tools
-        };
-      }
-      
-      // Agent can read globally if it has read_global tool
-      if (hasAgentTool(agent, AgentToolEnum.READ_GLOBAL)) {
-        return { 
-          allowed: true, 
-          requiredTool: AgentToolEnum.READ_GLOBAL,
-          availableTools: agent.tools
-        };
-      }
-
-      return {
-        allowed: false,
-        reason: `Agent ${agentId} lacks required tool for reading ${filePath}. Required: ${requiredTool}`,
-        requiredTool,
-        availableTools: agent.tools
-      };
-    }
-
-    // Check write permissions (includes edit, delete, create)
-    if ([OperationType.WRITE_FILE, OperationType.EDIT_FILE, OperationType.DELETE_FILE].includes(operation)) {
-      // Check if agent has required tool
-      if (hasRequiredTool) {
-        return { 
-          allowed: true, 
-          requiredTool,
-          availableTools: agent.tools
-        };
-      }
-
-      return {
-        allowed: false,
-        reason: `Agent ${agentId} lacks required tool for ${filePath}. Required: ${requiredTool}`,
-        requiredTool,
-        availableTools: agent.tools
-      };
-    }
-
-    // For other operations, just check if agent has required tool
     return {
-      allowed: hasRequiredTool,
-      reason: hasRequiredTool ? undefined : `Agent ${agentId} lacks required tool: ${requiredTool}`,
-      requiredTool,
+      allowed: false,
+      reason: `Agent ${agentId} not found`
+    };
+  }
+
+  /**
+   * Check permissions for agents with tool-based access
+   */
+  private checkModernAgentPermissions(
+    agent: AgentCapability,
+    operation: OperationType,
+    filePath?: FilePath
+  ): PermissionResult {
+    // For non-file operations, check if agent has tools that can handle it
+    if (!filePath) {
+      const hasCapableTool = hasAgentToolForOperation(agent, operation);
+      const capableTools = getToolsForOperation(agent, operation);
+      
+      return {
+        allowed: hasCapableTool,
+        reason: hasCapableTool ? undefined : `Agent ${agent.id} has no tools that can handle ${operation}`,
+        requiredTool: capableTools[0],
+        availableTools: agent.tools
+      };
+    }
+
+    // For file operations, check if any tool can handle the operation
+    const capableTools = getToolsForOperation(agent, operation);
+    
+    if (capableTools.length === 0) {
+      return {
+        allowed: false,
+        reason: `Agent ${agent.id} has no tools that can handle ${operation}`,
+        availableTools: agent.tools
+      };
+    }
+
+    // For now, assume if agent has capable tools, it has permission
+    // The actual access check will be done during execution
+    return {
+      allowed: true,
+      requiredTool: capableTools[0],
       availableTools: agent.tools
     };
   }
 
 
 
-  /**
-   * Get effective access patterns for an agent (including global patterns)
-   */
-  private getEffectiveAccessPatterns(agent: AgentCapability): AccessPattern[] {
-    const patterns: AccessPattern[] = [];
 
-    // Add global patterns first (lower priority)
-    patterns.push(...this.globalPatterns);
-
-    // Add agent-specific patterns
-    patterns.push(...agent.accessPatterns);
-
-    return patterns;
-  }
 
 
   /**
-   * Check if an agent can access a file with the new access patterns system
+   * Check if an agent can access a file
    */
   async checkAgentAccess(
     agentId: AgentId,
@@ -291,34 +270,65 @@ export class AgentRegistry {
     operation: OperationType
   ): Promise<AccessPatternResult> {
     const agent = this.getAgent(agentId);
-    if (!agent) {
-      return {
-        allowed: false,
-        reason: `Agent ${agentId} not found`,
-        patternId: 'system'
-      };
+    if (agent) {
+      return this.checkModernAgentAccess(agent, filePath, operation);
     }
 
-    const context = createFileAccessContext(filePath, operation, agentId);
-    const patterns = this.getEffectiveAccessPatterns(agent);
-    
-    if (patterns.length === 0) {
-      return {
-        allowed: false,
-        reason: `No access patterns defined for agent ${agentId}`,
-        patternId: 'system'
-      };
-    }
-
-    const results = await this.accessPatternEvaluator.evaluatePatterns(patterns, context);
-    const bestMatch = this.accessPatternEvaluator.getBestMatch(results);
-
-    return bestMatch || {
+    return {
       allowed: false,
-      reason: 'No matching access patterns found',
+      reason: `Agent ${agentId} not found`,
       patternId: 'system'
     };
   }
+
+  /**
+   * Check access for agent using tool-based patterns
+   */
+  private async checkModernAgentAccess(
+    agent: AgentCapability,
+    filePath: FilePath,
+    operation: OperationType
+  ): Promise<AccessPatternResult> {
+    const context = createFileAccessContext(filePath, operation, agent.id);
+    
+    // Get tools that can handle this operation
+    const capableTools = getToolsForOperation(agent, operation);
+    
+    if (capableTools.length === 0) {
+      return {
+        allowed: false,
+        reason: `Agent ${agent.id} has no tools that can handle ${operation}`,
+        patternId: 'system'
+      };
+    }
+
+    // Check access for each capable tool and return the best result
+    let bestResult: AccessPatternResult | undefined;
+    
+    for (const tool of capableTools) {
+      try {
+        const result = await tool.checkAccess(context);
+        
+        if (result.allowed) {
+          const priority = (result.metadata?.priority as number) || 0;
+          const currentPriority = (bestResult?.metadata?.priority as number) || 0;
+          
+          if (!bestResult || priority > currentPriority) {
+            bestResult = result;
+          }
+        }
+      } catch (error) {
+        console.warn(`Error checking tool access for ${tool.id}:`, error);
+      }
+    }
+
+    return bestResult || {
+      allowed: false,
+      reason: 'No tools allow access to this resource',
+      patternId: 'system'
+    };
+  }
+
 
   /**
    * Add a global access pattern
@@ -346,7 +356,7 @@ export class AgentRegistry {
    */
   getAccessPatternStats(): {
     totalAgents: number;
-    agentsWithAccessPatterns: number;
+    agentsWithTools: number;
     globalPatterns: number;
     cacheStats: ReturnType<AccessPatternEvaluator['getCacheStats']>;
   } {
@@ -354,7 +364,7 @@ export class AgentRegistry {
     
     return {
       totalAgents: agents.length,
-      agentsWithAccessPatterns: agents.filter(a => a.accessPatterns && a.accessPatterns.length > 0).length,
+      agentsWithTools: agents.filter(a => a.tools && a.tools.length > 0).length,
       globalPatterns: this.globalPatterns.length,
       cacheStats: this.accessPatternEvaluator.getCacheStats()
     };
@@ -387,11 +397,6 @@ export class AgentRegistry {
       throw new Error('Agent must have a valid string name');
     }
 
-    // Validate that agent has accessPatterns
-    if (!Array.isArray(agent.accessPatterns) || agent.accessPatterns.length === 0) {
-      throw new Error('Agent must have at least one access pattern');
-    }
-
     if (!Array.isArray(agent.endpoints)) {
       throw new Error('Agent must have an endpoints array');
     }
@@ -407,13 +412,14 @@ export class AgentRegistry {
       }
     }
     
-    // Validate tools
+    // Validate tools (check that they implement the AgentTool interface)
     for (const tool of agent.tools) {
-      if (!Object.values(AgentToolEnum).includes(tool)) {
-        throw new Error(`Invalid tool: ${tool}. Must be one of: ${Object.values(AgentToolEnum).join(', ')}`);
+      if (!tool.id || !tool.name || typeof tool.canHandle !== 'function') {
+        throw new Error(`Invalid tool: Tool must implement AgentTool interface with id, name, and canHandle method`);
       }
     }
   }
+
 
   /**
    * Check for conflicts with existing agents
@@ -423,8 +429,8 @@ export class AgentRegistry {
       throw new Error(`Agent with ID ${newAgent.id} already exists`);
     }
 
-    // TODO: Add sophisticated conflict detection for access patterns
-    // This would involve evaluating patterns against common file paths to detect overlaps
+    // TODO: Add sophisticated conflict detection for tool access patterns
+    // This would involve evaluating tool patterns against common file paths to detect overlaps
   }
 
 

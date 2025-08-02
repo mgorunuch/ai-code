@@ -89,35 +89,74 @@ export function createFileAccessContext(
 }
 
 /**
- * Available tools that agents can be granted access to
+ * Base class for all agent tools
+ * Tools now encapsulate both the operation type and access patterns
  */
-export enum AgentTool {
-  /** Read files within assigned directories */
-  READ_LOCAL = 'read_local',
-  /** Read files globally across all directories */
-  READ_GLOBAL = 'read_global',
-  /** Edit existing files within assigned directories */
-  EDIT_FILES = 'edit_files',
-  /** Create new files within assigned directories */
-  CREATE_FILES = 'create_files',
-  /** Delete files within assigned directories */
-  DELETE_FILES = 'delete_files',
-  /** Create new directories within assigned patterns */
-  CREATE_DIRECTORIES = 'create_directories',
-  /** Execute system commands (restricted) */
-  EXECUTE_COMMANDS = 'execute_commands',
-  /** Access network resources */
-  NETWORK_ACCESS = 'network_access',
-  /** Communicate with other agents */
-  INTER_AGENT_COMMUNICATION = 'inter_agent_communication'
+export abstract class AgentTool<TContext extends AccessContext = AccessContext> {
+  abstract readonly id: string;
+  abstract readonly name: string;
+  abstract readonly description: string;
+  abstract readonly accessPatterns: AccessPattern<TContext>[];
+
+  /**
+   * Check if this tool can handle a specific operation
+   */
+  abstract canHandle(operation: OperationType): boolean;
+
+  /**
+   * Check if this tool has access to a specific resource
+   */
+  async checkAccess(context: TContext): Promise<AccessPatternResult> {
+    if (this.accessPatterns.length === 0) {
+      return {
+        allowed: false,
+        reason: `Tool ${this.id} has no access patterns configured`,
+        patternId: this.id
+      };
+    }
+
+    // Find applicable patterns
+    const applicablePatterns = [];
+    for (const pattern of this.accessPatterns) {
+      const applies = await pattern.appliesTo(context);
+      if (applies) {
+        applicablePatterns.push(pattern);
+      }
+    }
+
+    if (applicablePatterns.length === 0) {
+      return {
+        allowed: false,
+        reason: `No applicable access patterns found for ${this.id}`,
+        patternId: this.id
+      };
+    }
+
+    // Sort by priority (highest first) and get the best result
+    applicablePatterns.sort((a, b) => b.priority - a.priority);
+    
+    // Use the highest priority pattern that allows access
+    for (const pattern of applicablePatterns) {
+      const result = await pattern.validate(context);
+      if (result.allowed) {
+        return result;
+      }
+    }
+
+    // If no pattern allows access, return the result from the highest priority pattern
+    return await applicablePatterns[0].validate(context);
+  }
 }
 
-/**
- * Tool set type for convenience */
-export type AgentToolSet = Set<AgentTool>;
+
 
 /**
- * Agent capability definition
+ * Tool instance set for new tool-based system
+ */
+export type AgentToolInstanceSet = Set<AgentTool>;
+
+/**
+ * Agent capability definition with tool-based access patterns
  */
 export interface AgentCapability {
   /** Unique identifier for the agent */
@@ -126,13 +165,12 @@ export interface AgentCapability {
   name: string;
   /** Description of the agent's purpose and capabilities */
   description: string;
-  /** Access patterns this agent is responsible for */
-  accessPatterns: AccessPattern[];
-  /** Tools this agent has access to */
+  /** Tool instances that define both capabilities and access patterns */
   tools: AgentTool[];
   /** Endpoints this agent exposes */
   endpoints: AgentEndpoint[];
 }
+
 
 /**
  * Agent endpoint definition
@@ -245,40 +283,22 @@ export interface QuestionRequest {
   };
 }
 
-/**
- * Tool permission mapping for operations
- */
-export const OPERATION_TOOL_MAP: Record<OperationType, AgentTool> = {
-  [OperationType.READ_FILE]: AgentTool.READ_LOCAL,
-  [OperationType.WRITE_FILE]: AgentTool.CREATE_FILES,
-  [OperationType.EDIT_FILE]: AgentTool.EDIT_FILES,
-  [OperationType.DELETE_FILE]: AgentTool.DELETE_FILES,
-  [OperationType.CREATE_DIRECTORY]: AgentTool.CREATE_DIRECTORIES,
-  [OperationType.QUESTION]: AgentTool.INTER_AGENT_COMMUNICATION,
-  [OperationType.VALIDATE]: AgentTool.READ_LOCAL,
-  [OperationType.TRANSFORM]: AgentTool.EDIT_FILES
-};
+
 
 /**
- * Helper function to check if an agent has a specific tool
+ * Helper function to check if an agent has a tool that can handle an operation
  */
-export function hasAgentTool(agent: AgentCapability, tool: AgentTool): boolean {
-  return agent.tools.includes(tool);
+export function hasAgentToolForOperation(agent: AgentCapability, operation: OperationType): boolean {
+  return agent.tools.some(tool => tool.canHandle(operation));
 }
 
 /**
- * Helper function to get required tool for an operation
+ * Helper function to get tools that can handle a specific operation
  */
-export function getRequiredTool(
-  operation: OperationType, 
-  filePath?: FilePath, 
-  isGlobalAccess?: boolean
-): AgentTool {
-  if (operation === OperationType.READ_FILE && isGlobalAccess) {
-    return AgentTool.READ_GLOBAL;
-  }
-  return OPERATION_TOOL_MAP[operation];
+export function getToolsForOperation(agent: AgentCapability, operation: OperationType): AgentTool[] {
+  return agent.tools.filter(tool => tool.canHandle(operation));
 }
+
 
 
 /**
@@ -452,12 +472,10 @@ export interface OrchestrationConfig {
   agents: AgentCapability[];
   /** Default permissions */
   defaultPermissions: {
-    /** Default tools granted to all agents */
-    defaultTools: AgentTool[];
     /** Require explicit tool grants for sensitive operations */
     requireExplicitToolGrants: boolean;
   };
-  /** Access patterns configuration */
+  /** Access patterns configuration (legacy - for backward compatibility) */
   accessPatterns?: AccessPatternsConfig;
   /** Logging configuration */
   logging: {

@@ -18,7 +18,7 @@ import type {
   ModelSelectionResult,
   AccessPattern
 } from './types.js';
-import { OperationType, AIModel, AgentTool as AgentToolEnum } from './types.js';
+import { OperationType, AIModel } from './types.js';
 import { AgentRegistry } from './agent-registry.js';
 import { PermissionSystem } from './permissions.js';
 import { AgentCommunicationSystem } from './communication.js';
@@ -60,7 +60,6 @@ export class CoreOrchestrator extends EventEmitter {
     this.config = {
       agents: [],
       defaultPermissions: {
-        defaultTools: [AgentToolEnum.READ_LOCAL, AgentToolEnum.INTER_AGENT_COMMUNICATION],
         requireExplicitToolGrants: true
       },
       accessPatterns: {
@@ -128,7 +127,8 @@ export class CoreOrchestrator extends EventEmitter {
       }
 
       this.emit('agentRegistered', agent);
-      this.log('info', `Agent registered: ${agent.id} (${agent.name}) with tools: [${agent.tools.join(', ')}]`);
+      const toolNames = agent.tools.map(tool => tool.name || tool.id).join(', ');
+      this.log('info', `Agent registered: ${agent.id} (${agent.name}) with tools: [${toolNames}]`);
     } catch (error) {
       this.log('error', `Failed to register agent ${agent.id}:`, error);
       throw error;
@@ -411,6 +411,7 @@ export class CoreOrchestrator extends EventEmitter {
    */
   getStats(): {
     totalAgents: number;
+    totalModernAgents: number;
     totalRequests: number;
     totalResponses: number;
     communicationStats: ReturnType<AgentCommunicationSystem['getStats']>;

@@ -13,11 +13,11 @@ import {
   CustomAccessPattern
 } from './index.js';
 import { 
-  AgentTool, 
+  AgentToolEnum, 
   AccessPattern, 
   type FileAccessContext, 
   type AccessPatternResult,
-  type AgentCapability
+  type LegacyAgentCapability
 } from './types.js';
 
 async function demonstrateOrchestrationSystem() {
@@ -27,7 +27,7 @@ async function demonstrateOrchestrationSystem() {
   console.log('1. Creating orchestrator with tools-based permissions...');
   const orchestrator = createOrchestrator({
     defaultPermissions: {
-      defaultTools: [AgentTool.READ_LOCAL, AgentTool.INTER_AGENT_COMMUNICATION],
+      defaultTools: [AgentToolEnum.READ_LOCAL, AgentToolEnum.INTER_AGENT_COMMUNICATION],
       requireExplicitToolGrants: true
     },
     logging: {
@@ -95,7 +95,7 @@ async function demonstrateOrchestrationSystem() {
   }
 
   // Register a custom agent for database operations with class-based patterns
-  const dbAgent: AgentCapability = {
+  const dbAgent: LegacyAgentCapability = {
     id: 'database-agent',
     name: 'Database Agent',
     description: 'Manages database files and operations',
@@ -113,11 +113,11 @@ async function demonstrateOrchestrationSystem() {
       new DatabaseSecurityPattern()
     ],
     tools: [
-      AgentTool.READ_LOCAL,
-      AgentTool.EDIT_FILES,
-      AgentTool.CREATE_FILES,
-      AgentTool.DELETE_FILES,
-      AgentTool.INTER_AGENT_COMMUNICATION
+      AgentToolEnum.READ_LOCAL,
+      AgentToolEnum.EDIT_FILES,
+      AgentToolEnum.CREATE_FILES,
+      AgentToolEnum.DELETE_FILES,
+      AgentToolEnum.INTER_AGENT_COMMUNICATION
     ],
     endpoints: [
       { name: 'question', description: 'Answer database questions' },
@@ -274,7 +274,11 @@ async function demonstrateOrchestrationSystem() {
   // Show registered agents
   console.log('\n9. Registered agents:');
   for (const agent of orchestrator.getAgents()) {
-    console.log(`${agent.id}: ${agent.name} - ${agent.tools.length} tools, ${agent.accessPatterns.length} access patterns`);
+    if ('accessPatterns' in agent) {
+      console.log(`${agent.id}: ${agent.name} - ${agent.tools.length} tools, ${agent.accessPatterns.length} access patterns (legacy)`);
+    } else {
+      console.log(`${agent.id}: ${agent.name} - ${agent.tools.length} tools (modern)`);
+    }
   }
   
   console.log('\n=== Core Orchestration System Demo Complete ===');

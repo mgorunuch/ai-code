@@ -2,15 +2,19 @@
 
 ## Overview
 
-The Core Orchestration System is a comprehensive framework for managing directory-based agent responsibilities, permissions, inter-agent communication, and **intelligent AI model selection**. This system uses a **tools-based permission model** and **automated model selection** that enables multiple specialized agents to work together while maintaining granular security controls, clear access boundaries, and optimal performance through dynamic model routing.
+The Core Orchestration System is a comprehensive framework for managing agent responsibilities, permissions, inter-agent communication, and **intelligent AI model selection**. This system uses a **tool-based architecture** where tools encapsulate both operations and access patterns, significantly simplifying agent configuration and permission management. The system includes **automated model selection** that enables multiple specialized agents to work together while maintaining granular security controls, clear access boundaries, and optimal performance through dynamic model routing.
 
-## Key Features: Tools-Based Permission System
+> **Note**: The system has been modernized to use only the tool-based approach. All legacy compatibility layers and migration utilities have been removed for a clean, maintainable codebase.
 
-The system uses a **tools-based approach** for managing agent permissions. This provides:
+## Key Features: Tool-Based Architecture
 
-- **Granular Control**: Specific tools for different types of operations
-- **Extensibility**: Easy addition of new tools and capabilities
-- **Security**: Fine-grained permission management
+The system uses a **tool-based architecture** for managing agent capabilities and permissions. This provides:
+
+- **Unified Model**: Tools combine operations and access patterns in one class
+- **Simplified Configuration**: Agents only need to specify tool instances
+- **Granular Control**: Each tool instance has its own specific access patterns
+- **Extensibility**: Easy addition of new tool types and capabilities
+- **Security**: Fine-grained permission management at the tool level
 - **Clean Architecture**: Modern, flexible design patterns
 
 ## AI Model Selection System
@@ -298,21 +302,19 @@ const customPattern = new CustomAccessPattern(
 
 The system enforces granular access controls through tools:
 
-**Available Tools:**
-- `READ_LOCAL`: Read files within assigned directories
-- `READ_GLOBAL`: Read files globally across all directories
-- `EDIT_FILES`: Edit existing files within assigned directories
-- `CREATE_FILES`: Create new files within assigned directories
-- `DELETE_FILES`: Delete files within assigned directories
-- `CREATE_DIRECTORIES`: Create new directories within assigned patterns
-- `EXECUTE_COMMANDS`: Execute system commands (restricted)
-- `NETWORK_ACCESS`: Access network resources
-- `INTER_AGENT_COMMUNICATION`: Communicate with other agents
+**Available Tool Types:**
+- `ReadTool`: Read files within specified access patterns
+- `EditTool`: Edit existing files within specified access patterns
+- `CreateTool`: Create new files within specified access patterns
+- `DeleteTool`: Delete files within specified access patterns
+- `CreateDirectoryTool`: Create directories within specified patterns
+- `CommunicationTool`: Communicate with other agents
+- `CompositeTool`: Combine multiple tool capabilities
 
 **Permission Rules:**
 - Agents must have specific tools to perform operations
-- Tools are mapped to operations (e.g., `EDIT_FILE` operation requires `EDIT_FILES` tool)
-- Global access requires `READ_GLOBAL` tool instead of local read access
+- Each tool defines which operations it can handle through the `canHandle()` method
+- Tools encapsulate access patterns that define where they can operate
 - All tool usage is logged for audit purposes
 
 **Custom Rules with Tools:**
@@ -323,19 +325,17 @@ const rule: PermissionRule = {
   agentId: '*',  // Apply to all agents
   filePattern: '**/*.config.*',
   operations: [OperationType.READ_FILE],
-  tools: [AgentTool.READ_GLOBAL],  // Specific tool requirement
   allow: true,
   priority: 100
 };
 
-// Tool-specific rule
+// Restrictive rule
 const editRule: PermissionRule = {
   id: 'restrict-production-edits',
   description: 'Prevent editing production files',
   agentId: '*',
   filePattern: '**/production/**',
   operations: [OperationType.EDIT_FILE, OperationType.DELETE_FILE],
-  tools: [AgentTool.EDIT_FILES, AgentTool.DELETE_FILES],
   allow: false,
   priority: 200
 };
@@ -486,8 +486,8 @@ The orchestrator automatically routes requests based on:
 ```typescript
 import { 
   createOrchestrator, 
-  DefaultAgents, 
-  AgentTool, 
+  ToolFactory,
+  CommonTools,
   AIModel, 
   DEFAULT_MODEL_CONFIGS, 
   DEFAULT_AUTO_MODE_CONFIG,
@@ -498,7 +498,6 @@ import {
 
 const orchestrator = createOrchestrator({
   defaultPermissions: {
-    defaultTools: [AgentTool.READ_LOCAL, AgentTool.INTER_AGENT_COMMUNICATION],
     requireExplicitToolGrants: true
   },
   accessPatterns: {
@@ -538,10 +537,8 @@ const orchestrator = createOrchestrator({
   }
 });
 
-// Register pre-configured agents
-orchestrator.registerAgent(DefaultAgents.createReactAgent());
-orchestrator.registerAgent(DefaultAgents.createTypescriptAgent());
-orchestrator.registerAgent(DefaultAgents.createTestAgent());
+// Register agents with tool-based configuration
+// (You would create your own agents using the tool factory methods)
 ```
 
 ### Custom Agent Registration with Access Patterns
@@ -829,7 +826,7 @@ orchestrator.permissionSystem.addPermissionRule({
   priority: 50
 });
 
-// Check permissions (synchronous for backward compatibility)
+// Check permissions (synchronous)
 const permission = orchestrator.permissionSystem.checkPermission(
   'test-agent',
   OperationType.READ_FILE,
@@ -856,7 +853,6 @@ if (asyncPermission.allowed) {
 interface OrchestrationConfig {
   agents: AgentCapability[];
   defaultPermissions: {
-    defaultTools: AgentTool[];
     requireExplicitToolGrants: boolean;
   };
   accessPatterns?: {
