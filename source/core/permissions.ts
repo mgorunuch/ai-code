@@ -8,12 +8,15 @@ import type {
   OperationType, 
   PermissionResult, 
   AgentCapability,
-  AgentTool
+  AgentTool,
+  AccessPatternResult,
+  AccessContext
 } from './types.js';
 import { 
   hasAgentTool,
   getRequiredTool,
-  AgentTool as AgentToolEnum
+  AgentTool as AgentToolEnum,
+  createAccessContext
 } from './types.js';
 import { AgentRegistry } from './agent-registry.js';
 
@@ -59,16 +62,14 @@ export class PermissionSystem {
   constructor(private agentRegistry: AgentRegistry) {}
 
   /**
-   * Check if an agent has permission to perform an operation
+   * Check if an agent has permission to perform an operation (synchronous version for backward compatibility)
    */
   checkPermission(
     agentId: AgentId,
     operation: OperationType,
     filePath?: FilePath
   ): PermissionResult {
-    const startTime = Date.now();
-
-    // Get the agent
+    // For synchronous calls, use legacy system
     const agent = this.agentRegistry.getAgent(agentId);
     if (!agent) {
       return this.logAndReturn({
@@ -77,11 +78,10 @@ export class PermissionSystem {
       }, agentId, operation, filePath, []);
     }
 
-    // Check built-in registry permissions first
     const registryResult = this.agentRegistry.checkPermissions(agentId, operation, filePath);
     
-    // If registry denies, check custom rules for overrides
-    if (!registryResult.allowed && filePath) {
+    // Check custom rules
+    if (filePath) {
       const customResult = this.checkCustomRules(agentId, operation, filePath);
       if (customResult.overrideResult) {
         return this.logAndReturn(
@@ -94,10 +94,97 @@ export class PermissionSystem {
       }
     }
 
-    // If registry allows, check custom rules for denials
-    if (registryResult.allowed && filePath) {
+    return this.logAndReturn(registryResult, agentId, operation, filePath, []);
+  }
+
+  /**
+   * Check if an agent has permission to perform an operation (asynchronous version with access patterns)
+   */
+  async checkPermissionAsync(
+    agentId: AgentId,
+    operation: OperationType,
+    filePath?: FilePath
+  ): Promise<PermissionResult> {
+    const startTime = Date.now();
+
+    // Get the agent
+    const agent = this.agentRegistry.getAgent(agentId);
+    if (!agent) {
+      return this.logAndReturn({
+        allowed: false,
+        reason: `Agent ${agentId} not found`
+      }, agentId, operation, filePath, []);
+    }
+
+    // For operations that don't involve files, use legacy permission checking
+    if (!filePath) {
+      const registryResult = this.agentRegistry.checkPermissions(agentId, operation, filePath);
+      return this.logAndReturn(registryResult, agentId, operation, filePath, []);
+    }
+
+    // Try the new access patterns system first
+    try {
+      const accessResult = await this.agentRegistry.checkAgentAccess(agentId, filePath, operation);
+      
+      // Convert access pattern result to permission result
+      let permissionResult: PermissionResult = {
+        allowed: accessResult.allowed,
+        reason: accessResult.reason,
+        requiredTool: getRequiredTool(operation, filePath),
+        availableTools: agent.tools
+      };
+
+      // If access patterns deny, check custom rules for overrides
+      if (!accessResult.allowed) {
+        const customResult = this.checkCustomRules(agentId, operation, filePath);
+        if (customResult.overrideResult) {
+          permissionResult = customResult.overrideResult;
+          return this.logAndReturn(
+            permissionResult,
+            agentId,
+            operation,
+            filePath,
+            customResult.appliedRules
+          );
+        }
+      }
+
+      // If access patterns allow, check custom rules for denials
+      if (accessResult.allowed) {
+        const customResult = this.checkCustomRules(agentId, operation, filePath);
+        if (customResult.overrideResult && !customResult.overrideResult.allowed) {
+          permissionResult = customResult.overrideResult;
+          return this.logAndReturn(
+            permissionResult,
+            agentId,
+            operation,
+            filePath,
+            customResult.appliedRules
+          );
+        }
+      }
+
+      // Check if agent has the required tools even if access patterns allow
+      const requiredTool = getRequiredTool(operation, filePath);
+      if (!hasAgentTool(agent, requiredTool)) {
+        permissionResult = {
+          allowed: false,
+          reason: `Agent ${agentId} lacks required tool: ${requiredTool}`,
+          requiredTool,
+          availableTools: agent.tools
+        };
+      }
+
+      return this.logAndReturn(permissionResult, agentId, operation, filePath, []);
+
+    } catch (error) {
+      // Fallback to legacy system if access patterns fail
+      console.warn(`Access patterns failed for ${agentId}:${operation}:${filePath}, falling back to legacy system:`, error);
+      const registryResult = this.agentRegistry.checkPermissions(agentId, operation, filePath);
+      
+      // Still check custom rules for legacy fallback
       const customResult = this.checkCustomRules(agentId, operation, filePath);
-      if (customResult.overrideResult && !customResult.overrideResult.allowed) {
+      if (customResult.overrideResult) {
         return this.logAndReturn(
           customResult.overrideResult,
           agentId,
@@ -106,10 +193,9 @@ export class PermissionSystem {
           customResult.appliedRules
         );
       }
-    }
 
-    // Return the registry result if no custom rules override
-    return this.logAndReturn(registryResult, agentId, operation, filePath, []);
+      return this.logAndReturn(registryResult, agentId, operation, filePath, []);
+    }
   }
 
   /**
@@ -168,18 +254,10 @@ export class PermissionSystem {
       };
     }
 
-    // Check if agent has any patterns that match this directory
-    const normalizedDir = directoryPath.replace(/^\/+/, '').replace(/\\/g, '/');
-    
-    for (const pattern of agent.directoryPatterns) {
-      // Simple pattern matching for directory
-      if (normalizedDir.startsWith(pattern.replace('**/', '').replace('/*', ''))) {
-        // Check if agent has required tools for this operation
-        const requiredTool = getRequiredTool(operation, directoryPath);
-        if (hasAgentTool(agent, requiredTool)) {
-          return { allowed: true };
-        }
-      }
+    // Check if agent has required tools for this operation
+    const requiredTool = getRequiredTool(operation, directoryPath);
+    if (hasAgentTool(agent, requiredTool)) {
+      return { allowed: true };
     }
 
     return {
@@ -192,7 +270,6 @@ export class PermissionSystem {
    * Get effective permissions for an agent
    */
   getEffectivePermissions(agentId: AgentId): {
-    directoryPatterns: string[];
     tools: AgentTool[];
     customRules: PermissionRule[];
   } {
@@ -202,7 +279,6 @@ export class PermissionSystem {
     }
 
     return {
-      directoryPatterns: agent.directoryPatterns,
       tools: agent.tools,
       customRules: this.getPermissionRules(agentId),
     };
@@ -242,6 +318,36 @@ export class PermissionSystem {
   clearAuditLog(): void {
     this.auditLog = [];
     console.log('Audit log cleared');
+  }
+
+  /**
+   * Get access pattern statistics from the agent registry
+   */
+  getAccessPatternStats() {
+    return this.agentRegistry.getAccessPatternStats();
+  }
+
+  /**
+   * Test an access pattern against a specific context
+   */
+  async testAccessPattern(
+    agentId: AgentId,
+    filePath: FilePath,
+    operation: OperationType
+  ): Promise<{
+    accessPatternResult: AccessPatternResult;
+    permissionResult: PermissionResult;
+    customRulesApplied: PermissionRule[];
+  }> {
+    const accessResult = await this.agentRegistry.checkAgentAccess(agentId, filePath, operation);
+    const permissionResult = await this.checkPermissionAsync(agentId, operation, filePath);
+    const customResult = this.checkCustomRules(agentId, operation, filePath);
+
+    return {
+      accessPatternResult: accessResult,
+      permissionResult,
+      customRulesApplied: customResult.appliedRules
+    };
   }
 
   /**

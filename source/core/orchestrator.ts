@@ -9,7 +9,6 @@ import type {
   AgentId,
   OperationRequest,
   OperationResponse,
-  OperationType,
   FilePath,
   QuestionRequest,
   QuestionResponse,
@@ -17,9 +16,9 @@ import type {
   AgentTool,
   ModelSelectionCriteria,
   ModelSelectionResult,
-  AIModel
+  AccessPattern
 } from './types.js';
-import { AgentTool as AgentToolEnum } from './types.js';
+import { OperationType, AIModel, AgentTool as AgentToolEnum } from './types.js';
 import { AgentRegistry } from './agent-registry.js';
 import { PermissionSystem } from './permissions.js';
 import { AgentCommunicationSystem } from './communication.js';
@@ -64,10 +63,17 @@ export class CoreOrchestrator extends EventEmitter {
         defaultTools: [AgentToolEnum.READ_LOCAL, AgentToolEnum.INTER_AGENT_COMMUNICATION],
         requireExplicitToolGrants: true
       },
+      accessPatterns: {
+        enabled: true,
+        enableCaching: true,
+        maxCacheSize: 1000,
+        ...config?.accessPatterns
+      },
       logging: {
         level: 'info',
         logCommunications: true,
-        logModelSelection: config?.logging?.logModelSelection ?? true
+        logModelSelection: config?.logging?.logModelSelection ?? true,
+        logAccessPatterns: config?.logging?.logAccessPatterns ?? false
       },
       // Default model selection configuration
       modelSelection: {
@@ -85,8 +91,8 @@ export class CoreOrchestrator extends EventEmitter {
       ...config
     };
 
-    // Initialize core systems
-    this.agentRegistry = new AgentRegistry();
+    // Initialize core systems with access patterns config
+    this.agentRegistry = new AgentRegistry(this.config.accessPatterns);
     this.permissionSystem = new PermissionSystem(this.agentRegistry);
     this.communicationSystem = new AgentCommunicationSystem(this.agentRegistry);
     
@@ -175,7 +181,7 @@ export class CoreOrchestrator extends EventEmitter {
       this.log('debug', `Processing request ${request.requestId} (${request.type})`);
 
       // Route the request to the appropriate agent
-      const targetAgent = this.routeRequest(request);
+      const targetAgent = await this.routeRequest(request);
       
       if (!targetAgent) {
         throw new Error(`No agent found to handle request: ${request.type} for ${request.filePath || 'system'}`);
@@ -183,12 +189,23 @@ export class CoreOrchestrator extends EventEmitter {
 
       this.emit('requestRouted', request, targetAgent.id);
 
-      // Check permissions
-      const permissionResult = this.permissionSystem.checkPermission(
-        targetAgent.id,
-        request.type,
-        request.filePath
-      );
+      // Check permissions (use async version if access patterns are enabled)
+      const permissionResult = this.config.accessPatterns?.enabled
+        ? await this.permissionSystem.checkPermissionAsync(
+            targetAgent.id,
+            request.type,
+            request.filePath
+          )
+        : this.permissionSystem.checkPermission(
+            targetAgent.id,
+            request.type,
+            request.filePath
+          );
+
+      // Log access pattern evaluation if enabled
+      if (this.config.logging.logAccessPatterns && this.config.accessPatterns?.enabled && request.filePath) {
+        this.log('debug', `Access pattern evaluation for ${targetAgent.id}:${request.type}:${request.filePath} -> ${permissionResult.allowed ? 'ALLOWED' : 'DENIED'} (${permissionResult.reason})`);
+      }
 
       if (!permissionResult.allowed) {
         this.emit('permissionDenied', request, permissionResult.reason || 'Permission denied', permissionResult.requiredTool);
@@ -370,8 +387,8 @@ export class CoreOrchestrator extends EventEmitter {
   /**
    * Get agents that can handle a specific file path
    */
-  getAgentsForPath(filePath: FilePath): AgentCapability[] {
-    const responsible = this.agentRegistry.findResponsibleAgent(filePath);
+  async getAgentsForPath(filePath: FilePath): Promise<AgentCapability[]> {
+    const responsible = await this.agentRegistry.findResponsibleAgent(filePath);
     return responsible ? [responsible] : [];
   }
 
@@ -464,16 +481,59 @@ export class CoreOrchestrator extends EventEmitter {
    */
   updateConfig(config: Partial<OrchestrationConfig>): void {
     this.config = { ...this.config, ...config };
+    
+    // Update access patterns configuration if it changed
+    if (config.accessPatterns) {
+      this.agentRegistry.updateAccessPatternsConfig(config.accessPatterns);
+    }
+    
     this.log('info', 'Configuration updated');
+  }
+
+  /**
+   * Add a global access pattern
+   */
+  addGlobalAccessPattern(pattern: AccessPattern): void {
+    this.agentRegistry.addGlobalPattern(pattern);
+    this.log('info', 'Global access pattern added');
+  }
+
+  /**
+   * Remove a global access pattern
+   */
+  removeGlobalAccessPattern(patternId: string): boolean {
+    const removed = this.agentRegistry.removeGlobalPattern(patternId);
+    if (removed) {
+      this.log('info', `Global access pattern removed: ${patternId}`);
+    }
+    return removed;
+  }
+
+  /**
+   * Get access pattern statistics
+   */
+  getAccessPatternStats() {
+    return this.permissionSystem.getAccessPatternStats();
+  }
+
+  /**
+   * Test access patterns for debugging
+   */
+  async testAccessPattern(
+    agentId: AgentId,
+    filePath: FilePath,
+    operation: OperationType
+  ) {
+    return await this.permissionSystem.testAccessPattern(agentId, filePath, operation);
   }
 
   /**
    * Route a request to the appropriate agent
    */
-  private routeRequest(request: OperationRequest): AgentCapability | undefined {
+  private async routeRequest(request: OperationRequest): Promise<AgentCapability | undefined> {
     // For file operations, find responsible agent by file path
     if (request.filePath) {
-      const responsible = this.agentRegistry.findResponsibleAgent(request.filePath);
+      const responsible = await this.agentRegistry.findResponsibleAgent(request.filePath);
       if (responsible) {
         return responsible;
       }

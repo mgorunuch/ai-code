@@ -7,6 +7,90 @@ export type DirectoryPattern = string;
 export type FilePath = string;
 
 /**
+ * Context information for access pattern validation
+ */
+export interface AccessContext {
+  /** The file path being accessed */
+  filePath: FilePath;
+  /** The operation being performed */
+  operation: OperationType;
+  /** The agent requesting access */
+  agentId: AgentId;
+  /** Additional metadata */
+  metadata?: Record<string, any>;
+  /** Timestamp of the request */
+  timestamp?: Date;
+}
+
+/**
+ * Result of access pattern validation
+ */
+export interface AccessPatternResult {
+  /** Whether access is allowed */
+  allowed: boolean;
+  /** Reason for the decision */
+  reason?: string;
+  /** Additional metadata from the pattern */
+  metadata?: Record<string, any>;
+  /** Pattern that made the decision */
+  patternId?: string;
+}
+
+/**
+ * Function-based access pattern validator
+ */
+export type AccessPatternFunction = (context: AccessContext) => AccessPatternResult | Promise<AccessPatternResult>;
+
+/**
+ * Object-based access pattern configuration
+ */
+export interface AccessPatternObject {
+  /** Unique identifier for this pattern */
+  id: string;
+  /** Human-readable description */
+  description: string;
+  /** File patterns to match (glob patterns) */
+  filePatterns?: string[];
+  /** Operations this pattern applies to */
+  operations?: OperationType[];
+  /** Custom validation function */
+  validate?: AccessPatternFunction;
+  /** Whether this pattern allows or denies access */
+  allow: boolean;
+  /** Priority of this pattern (higher = more important) */
+  priority: number;
+  /** Additional configuration */
+  config?: Record<string, any>;
+}
+
+/**
+ * Abstract base class for access pattern implementations
+ */
+export abstract class AccessPatternClass {
+  abstract id: string;
+  abstract description: string;
+  abstract priority: number;
+
+  /**
+   * Validate access for the given context
+   */
+  abstract validate(context: AccessContext): AccessPatternResult | Promise<AccessPatternResult>;
+
+  /**
+   * Check if this pattern applies to the given context
+   */
+  abstract appliesTo(context: AccessContext): boolean;
+}
+
+/**
+ * Union type for all supported access pattern types
+ */
+export type AccessPattern = 
+  | AccessPatternObject       // Object configuration
+  | AccessPatternFunction     // Function validator
+  | AccessPatternClass;       // Class instance
+
+/**
  * Available tools that agents can be granted access to
  */
 export enum AgentTool {
@@ -44,8 +128,8 @@ export interface AgentCapability {
   name: string;
   /** Description of the agent's purpose and capabilities */
   description: string;
-  /** Directory patterns this agent is responsible for (glob patterns) */
-  directoryPatterns: DirectoryPattern[];
+  /** Access patterns this agent is responsible for - supports objects, functions, and classes */
+  accessPatterns: AccessPattern[];
   /** Tools this agent has access to */
   tools: AgentTool[];
   /** Endpoints this agent exposes */
@@ -110,6 +194,8 @@ export interface OperationResponse {
   handledBy: AgentId;
   /** Request ID this response corresponds to */
   requestId: string;
+  /** Additional metadata (e.g., model selection info) */
+  metadata?: Record<string, any>;
 }
 
 /**
@@ -194,6 +280,47 @@ export function getRequiredTool(
     return AgentTool.READ_GLOBAL;
   }
   return OPERATION_TOOL_MAP[operation];
+}
+
+
+/**
+ * Helper function to check if a pattern is an object configuration
+ */
+export function isAccessPatternObject(pattern: AccessPattern): pattern is AccessPatternObject {
+  return typeof pattern === 'object' && pattern !== null && 'id' in pattern && 'allow' in pattern;
+}
+
+/**
+ * Helper function to check if a pattern is a function
+ */
+export function isAccessPatternFunction(pattern: AccessPattern): pattern is AccessPatternFunction {
+  return typeof pattern === 'function';
+}
+
+/**
+ * Helper function to check if a pattern is a class instance
+ */
+export function isAccessPatternClass(pattern: AccessPattern): pattern is AccessPatternClass {
+  return pattern instanceof AccessPatternClass;
+}
+
+
+/**
+ * Helper function to create an access context
+ */
+export function createAccessContext(
+  filePath: FilePath,
+  operation: OperationType,
+  agentId: AgentId,
+  metadata?: Record<string, any>
+): AccessContext {
+  return {
+    filePath,
+    operation,
+    agentId,
+    metadata,
+    timestamp: new Date()
+  };
 }
 
 
@@ -347,6 +474,20 @@ export interface ModelSelectionResult {
 }
 
 /**
+ * Access patterns configuration
+ */
+export interface AccessPatternsConfig {
+  /** Enable the new access patterns system */
+  enabled: boolean;
+  /** Global access patterns that apply to all agents */
+  globalPatterns?: AccessPattern[];
+  /** Cache access pattern evaluations for performance */
+  enableCaching?: boolean;
+  /** Maximum cache size for access pattern evaluations */
+  maxCacheSize?: number;
+}
+
+/**
  * Orchestration configuration
  */
 export interface OrchestrationConfig {
@@ -359,6 +500,8 @@ export interface OrchestrationConfig {
     /** Require explicit tool grants for sensitive operations */
     requireExplicitToolGrants: boolean;
   };
+  /** Access patterns configuration */
+  accessPatterns?: AccessPatternsConfig;
   /** Logging configuration */
   logging: {
     /** Log level */
@@ -367,6 +510,8 @@ export interface OrchestrationConfig {
     logCommunications: boolean;
     /** Whether to log model selection decisions */
     logModelSelection?: boolean;
+    /** Whether to log access pattern evaluations */
+    logAccessPatterns?: boolean;
   };
   /** Model selection configuration */
   modelSelection?: {

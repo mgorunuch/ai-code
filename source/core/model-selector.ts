@@ -7,15 +7,14 @@
 
 import { EventEmitter } from 'events';
 import type {
-  AIModel,
   ModelConfig,
   ModelCapabilities,
   AutoModeConfig,
   ModelSelectionCriteria,
   ModelSelectionResult,
-  OperationType,
   AgentId
 } from './types.js';
+import { AIModel, OperationType } from './types.js';
 
 /**
  * Events emitted by the model selection system

@@ -168,8 +168,8 @@ export class AgentCommunicationSystem {
   /**
    * Discover agents that can answer questions about specific topics/files
    */
-  discoverQuestionAgents(context?: { filePaths?: string[]; domain?: string }): AgentCapability[] {
-    return this.agentRegistry.findQuestionAgents(context);
+  async discoverQuestionAgents(context?: { filePaths?: string[]; domain?: string }): Promise<AgentCapability[]> {
+    return await this.agentRegistry.findQuestionAgents(context);
   }
 
   /**
@@ -180,7 +180,7 @@ export class AgentCommunicationSystem {
     question: QuestionRequest,
     context?: { filePaths?: string[]; domain?: string }
   ): Promise<Map<AgentId, QuestionResponse | Error>> {
-    const availableAgents = this.discoverQuestionAgents(context);
+    const availableAgents = await this.discoverQuestionAgents(context);
     const targetAgentIds = availableAgents
       .map(agent => agent.id)
       .filter(id => id !== fromAgent); // Don't ask yourself

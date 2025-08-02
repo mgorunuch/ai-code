@@ -11,11 +11,11 @@ The system uses a **tools-based approach** for managing agent permissions. This 
 - **Granular Control**: Specific tools for different types of operations
 - **Extensibility**: Easy addition of new tools and capabilities
 - **Security**: Fine-grained permission management
-- **Clean Architecture**: No legacy compatibility layers
+- **Clean Architecture**: Modern, flexible design patterns
 
 ## AI Model Selection System
 
-The system now includes comprehensive **AI model selection** capabilities with auto mode functionality:
+The system includes comprehensive **AI model selection** capabilities with auto mode functionality:
 
 - **Multi-Model Support**: Support for multiple AI models (Claude 3.5 Sonnet, Claude 3 Opus, Claude 3 Haiku, GPT-4 Turbo, GPT-3.5 Turbo)
 - **Auto Mode**: Intelligent automatic model selection based on operation type, complexity, and requirements
@@ -31,11 +31,11 @@ The system now includes comprehensive **AI model selection** capabilities with a
 
 1. **AgentRegistry** (`agent-registry.ts`)
    - Manages agent registration and discovery
-   - Maps agents to directory patterns using glob matching
+   - Maps agents to access patterns using sophisticated matching
    - Provides agent lookup and responsibility determination
 
 2. **PermissionSystem** (`permissions.ts`)
-   - Enforces directory-based access controls
+   - Enforces access pattern-based controls
    - Supports custom permission rules and overrides
    - Maintains audit logs of permission decisions
 
@@ -58,38 +58,172 @@ The system now includes comprehensive **AI model selection** capabilities with a
 
 ## Key Features
 
-### Directory-Based Responsibility
+### Modern Access Patterns System
 
-Each agent is assigned responsibility for specific directory patterns using glob syntax:
+The core orchestration system supports a flexible access patterns system that provides sophisticated control over agent responsibilities. Agents can be configured with:
+
+1. **Object-based Access Patterns** (complex configuration)
+2. **Function-based Access Patterns** (custom validation logic)
+3. **Class-based Access Patterns** (sophisticated access control)
+
+#### Object-based Access Patterns
+
+Configure agents with structured access pattern objects:
 
 ```typescript
 const agent: AgentCapability = {
   id: 'react-agent',
   name: 'React Frontend Agent',
-  directoryPatterns: [
-    '**/*.tsx',
-    '**/*.jsx', 
-    '**/components/**',
-    '**/pages/**'
+  accessPatterns: [
+    {
+      id: 'react-components',
+      description: 'React component files',
+      filePatterns: ['**/*.tsx', '**/*.jsx'],
+      operations: [OperationType.READ_FILE, OperationType.EDIT_FILE],
+      allow: true,
+      priority: 20
+    },
+    {
+      id: 'component-directories',
+      description: 'Component directories',
+      filePatterns: ['**/components/**/*', '**/pages/**/*'],
+      allow: true,
+      priority: 15,
+      config: {
+        excludeTests: true,
+        allowNewFiles: true
+      }
+    }
   ],
-  tools: [
-    AgentTool.READ_LOCAL,
-    AgentTool.EDIT_FILES,
-    AgentTool.CREATE_FILES,
-    AgentTool.DELETE_FILES,
-    AgentTool.INTER_AGENT_COMMUNICATION
+  tools: [AgentTool.READ_LOCAL, AgentTool.EDIT_FILES],
+  endpoints: [{ name: 'question', description: 'Answer React questions' }]
+};
+```
+
+#### Function-based Access Patterns
+
+Use custom validation functions for dynamic access control:
+
+```typescript
+const customValidation: AccessPatternFunction = async (context) => {
+  // Custom validation logic
+  if (context.filePath.includes('test') && context.operation === OperationType.DELETE_FILE) {
+    return {
+      allowed: false,
+      reason: 'Cannot delete test files',
+      patternId: 'test-protection'
+    };
+  }
+  
+  // Check file size, modification time, etc.
+  if (context.metadata?.fileSize && context.metadata.fileSize > 1024 * 1024) {
+    return {
+      allowed: false,
+      reason: 'File too large for this agent',
+      patternId: 'size-limit'
+    };
+  }
+  
+  return {
+    allowed: true,
+    reason: 'Custom validation passed',
+    patternId: 'custom-validation'
+  };
+};
+
+const agent: AgentCapability = {
+  id: 'test-agent',
+  name: 'Test Agent',
+  accessPatterns: [
+    {
+      id: 'test-files',
+      description: 'Test files',
+      filePatterns: ['**/*.test.ts'],
+      allow: true,
+      priority: 20
+    },
+    customValidation  // Function pattern
   ],
-  endpoints: [
-    { name: 'question', description: 'Answer React-related questions' }
-  ]
+  tools: [AgentTool.READ_LOCAL, AgentTool.EDIT_FILES],
+  endpoints: [{ name: 'test', description: 'Run tests' }]
+};
+```
+
+#### Class-based Access Patterns
+
+Implement sophisticated access control with custom classes:
+
+```typescript
+class DatabaseAccessPattern extends AccessPatternClass {
+  id = 'database-security';
+  description = 'Database security access pattern';
+  priority = 100;
+
+  appliesTo(context: AccessContext): boolean {
+    return context.filePath.includes('database') || 
+           context.filePath.endsWith('.sql') ||
+           context.filePath.includes('migration');
+  }
+
+  async validate(context: AccessContext): Promise<AccessPatternResult> {
+    // Check if it's a production database operation
+    if (context.filePath.includes('production') && 
+        [OperationType.DELETE_FILE, OperationType.EDIT_FILE].includes(context.operation)) {
+      
+      // Additional security checks
+      const isAuthorized = await this.checkDatabaseAuthorization(context.agentId);
+      if (!isAuthorized) {
+        return {
+          allowed: false,
+          reason: 'Agent not authorized for production database operations',
+          metadata: { securityLevel: 'high' }
+        };
+      }
+    }
+
+    return {
+      allowed: true,
+      reason: 'Database access authorized',
+      metadata: { 
+        securityLevel: 'standard',
+        checkedBy: this.id
+      }
+    };
+  }
+
+  private async checkDatabaseAuthorization(agentId: string): Promise<boolean> {
+    // Custom authorization logic
+    const authorizedAgents = ['database-admin', 'senior-dev'];
+    return authorizedAgents.includes(agentId);
+  }
+}
+
+const agent: AgentCapability = {
+  id: 'database-agent',
+  name: 'Database Agent',
+  accessPatterns: [
+    new DatabaseAccessPattern(),
+    {
+      id: 'read-only-access',
+      description: 'Read-only database access',
+      filePatterns: ['**/*.sql'],
+      operations: [OperationType.READ_FILE],
+      allow: true,
+      priority: 50
+    }
+  ],
+  tools: [AgentTool.READ_LOCAL, AgentTool.EDIT_FILES, AgentTool.DELETE_FILES],
+  endpoints: [{ name: 'query', description: 'Execute database queries' }]
 };
 ```
 
 **Pattern Matching Rules:**
+- Higher priority patterns override lower priority ones
 - `**` matches any number of directories
 - `*` matches any single directory or filename segment
 - `!pattern` excludes matching paths
-- More specific patterns take precedence over general ones
+- Custom functions and classes provide ultimate flexibility
+- Patterns are evaluated in priority order (highest first)
 
 ### Tools-Based Permission System
 
@@ -271,7 +405,7 @@ const responses = await orchestrator.askQuestion(
 
 The orchestrator automatically routes requests based on:
 
-1. **File Path Analysis**: Determines responsible agent via pattern matching
+1. **Access Pattern Analysis**: Determines responsible agent via pattern matching
 2. **Operation Type**: Routes to agents with appropriate endpoints
 3. **Permission Checks**: Ensures requesting agent has necessary access
 4. **Fallback Logic**: Handles cases where no specific agent is responsible
@@ -287,7 +421,10 @@ import {
   AgentTool, 
   AIModel, 
   DEFAULT_MODEL_CONFIGS, 
-  DEFAULT_AUTO_MODE_CONFIG 
+  DEFAULT_AUTO_MODE_CONFIG,
+  AccessPatternObject,
+  AccessPatternFunction,
+  AccessPatternClass
 } from './core/index.js';
 
 const orchestrator = createOrchestrator({
@@ -295,17 +432,33 @@ const orchestrator = createOrchestrator({
     defaultTools: [AgentTool.READ_LOCAL, AgentTool.INTER_AGENT_COMMUNICATION],
     requireExplicitToolGrants: true
   },
+  accessPatterns: {
+    enabled: true,
+    enableCaching: true,
+    maxCacheSize: 1000,
+    globalPatterns: [
+      {
+        id: 'global-config-read',
+        description: 'Allow all agents to read config files',
+        filePatterns: ['**/*.config.*', '**/config/**/*'],
+        operations: [OperationType.READ_FILE],
+        allow: true,
+        priority: 5
+      }
+    ]
+  },
   logging: {
     level: 'info',
     logCommunications: true,
-    logModelSelection: true
+    logModelSelection: true,
+    logAccessPatterns: true
   },
   modelSelection: {
     availableModels: DEFAULT_MODEL_CONFIGS,
     autoMode: {
       ...DEFAULT_AUTO_MODE_CONFIG,
       enabled: true,
-      costThreshold: 0.05, // Custom cost threshold
+      costThreshold: 0.05,
       operationPreferences: {
         [OperationType.QUESTION]: [AIModel.CLAUDE_3_OPUS, AIModel.CLAUDE_3_5_SONNET],
         [OperationType.EDIT_FILE]: [AIModel.CLAUDE_3_5_SONNET, AIModel.GPT_4_TURBO]
@@ -322,25 +475,101 @@ orchestrator.registerAgent(DefaultAgents.createTypescriptAgent());
 orchestrator.registerAgent(DefaultAgents.createTestAgent());
 ```
 
-### Custom Agent Registration
+### Custom Agent Registration with Access Patterns
 
 ```typescript
+// Define a custom security access pattern class
+class SecurityAccessPattern extends AccessPatternClass {
+  id = 'security-pattern';
+  description = 'Security-aware access pattern';
+  priority = 100;
+
+  appliesTo(context: AccessContext): boolean {
+    return context.filePath.includes('security') || 
+           context.filePath.includes('auth') ||
+           context.filePath.includes('password');
+  }
+
+  async validate(context: AccessContext): Promise<AccessPatternResult> {
+    // Only allow read operations on security files
+    if (context.operation !== OperationType.READ_FILE) {
+      return {
+        allowed: false,
+        reason: 'Only read operations allowed on security files',
+        metadata: { securityLevel: 'restricted' }
+      };
+    }
+
+    return {
+      allowed: true,
+      reason: 'Security file read access granted',
+      metadata: { securityLevel: 'monitored' }
+    };
+  }
+}
+
+// Define a custom validation function
+const databaseValidation: AccessPatternFunction = async (context) => {
+  if (context.filePath.endsWith('.sql') && context.operation === OperationType.EDIT_FILE) {
+    // Check if it's a migration file
+    if (context.filePath.includes('migration')) {
+      // Additional validation for migrations
+      const isSafeOperation = await checkMigrationSafety(context.filePath);
+      if (!isSafeOperation) {
+        return {
+          allowed: false,
+          reason: 'Unsafe migration detected',
+          patternId: 'migration-safety'
+        };
+      }
+    }
+  }
+  
+  return {
+    allowed: true,
+    reason: 'Database operation validated',
+    patternId: 'database-validation'
+  };
+};
+
 const customAgent: AgentCapability = {
   id: 'database-agent',
   name: 'Database Management Agent',
-  description: 'Handles database schemas and migrations',
-  directoryPatterns: [
-    '**/migrations/**',
-    '**/schemas/**',
-    '**/*.sql'
+  description: 'Handles database schemas and migrations with advanced security',
+  accessPatterns: [
+    // Object-based patterns
+    {
+      id: 'database-files',
+      description: 'Database schema and migration files',
+      filePatterns: ['**/migrations/**/*', '**/schemas/**/*', '**/*.sql'],
+      operations: [OperationType.READ_FILE, OperationType.EDIT_FILE],
+      allow: true,
+      priority: 50,
+      config: {
+        requireBackup: true,
+        auditLog: true
+      }
+    },
+    {
+      id: 'config-files',
+      description: 'Database configuration files',
+      filePatterns: ['**/database.config.*', '**/db-config.*'],
+      operations: [OperationType.READ_FILE],
+      allow: true,
+      priority: 30
+    },
+    // Function-based pattern
+    databaseValidation,
+    // Class-based pattern
+    new SecurityAccessPattern()
   ],
   tools: [
     AgentTool.READ_LOCAL,
-    AgentTool.READ_GLOBAL,  // Can read config files globally
+    AgentTool.READ_GLOBAL,
     AgentTool.EDIT_FILES,
     AgentTool.CREATE_FILES,
     AgentTool.DELETE_FILES,
-    AgentTool.EXECUTE_COMMANDS,  // For running migrations
+    AgentTool.EXECUTE_COMMANDS,
     AgentTool.INTER_AGENT_COMMUNICATION
   ],
   endpoints: [
@@ -354,15 +583,29 @@ orchestrator.registerAgent(customAgent, async (request) => {
   // Custom request handler implementation
   switch (request.type) {
     case OperationType.READ_FILE:
-      // Handle file reading
+      // Handle file reading with security logging
+      console.log(`Database agent reading: ${request.filePath}`);
+      break;
+    case OperationType.EDIT_FILE:
+      // Handle file editing with backup
+      await createBackup(request.filePath);
       break;
     case OperationType.QUESTION:
-      // Handle questions
+      // Handle database questions
       break;
     default:
       throw new Error(`Unsupported operation: ${request.type}`);
   }
 });
+
+async function checkMigrationSafety(filePath: string): Promise<boolean> {
+  // Implementation for migration safety checks
+  return true;
+}
+
+async function createBackup(filePath: string): Promise<void> {
+  // Implementation for creating backups
+}
 ```
 
 ### File Operations
@@ -440,10 +683,50 @@ orchestrator.updateModelSelectionConfig({
 });
 ```
 
-### Permission Management
+### Access Pattern Management
 
 ```typescript
-// Add custom permission rule
+// Add global access patterns
+orchestrator.addGlobalAccessPattern({
+  id: 'emergency-access',
+  description: 'Emergency read access for all agents',
+  filePatterns: ['**/emergency/**/*'],
+  operations: [OperationType.READ_FILE],
+  allow: true,
+  priority: 1000
+});
+
+// Add function-based global pattern
+const auditPattern: AccessPatternFunction = async (context) => {
+  // Log all file operations for audit
+  console.log(`AUDIT: ${context.agentId} performing ${context.operation} on ${context.filePath}`);
+  
+  return {
+    allowed: true,
+    reason: 'Audit logged',
+    patternId: 'audit-logger',
+    metadata: { audited: true, timestamp: new Date() }
+  };
+};
+
+orchestrator.addGlobalAccessPattern(auditPattern);
+
+// Test access patterns for debugging
+const testResult = await orchestrator.testAccessPattern(
+  'database-agent',
+  'src/migrations/001_create_users.sql',
+  OperationType.EDIT_FILE
+);
+
+console.log('Access Pattern Result:', testResult.accessPatternResult);
+console.log('Permission Result:', testResult.permissionResult);
+console.log('Custom Rules Applied:', testResult.customRulesApplied);
+
+// Get access pattern statistics
+const stats = orchestrator.getAccessPatternStats();
+console.log('Access Pattern Stats:', stats);
+
+// Permission rules work with access patterns
 orchestrator.permissionSystem.addPermissionRule({
   id: 'test-read-source',
   description: 'Allow test agent to read source files',
@@ -454,14 +737,21 @@ orchestrator.permissionSystem.addPermissionRule({
   priority: 50
 });
 
-// Check permissions before operation
+// Check permissions (synchronous for backward compatibility)
 const permission = orchestrator.permissionSystem.checkPermission(
   'test-agent',
   OperationType.READ_FILE,
   'src/utils/helpers.ts'
 );
 
-if (permission.allowed) {
+// Check permissions with access patterns (async)
+const asyncPermission = await orchestrator.permissionSystem.checkPermissionAsync(
+  'test-agent',
+  OperationType.READ_FILE,
+  'src/utils/helpers.ts'
+);
+
+if (asyncPermission.allowed) {
   // Proceed with operation
 }
 ```
@@ -477,10 +767,17 @@ interface OrchestrationConfig {
     defaultTools: AgentTool[];
     requireExplicitToolGrants: boolean;
   };
+  accessPatterns?: {
+    enabled: boolean;
+    globalPatterns?: AccessPattern[];
+    enableCaching?: boolean;
+    maxCacheSize?: number;
+  };
   logging: {
     level: 'debug' | 'info' | 'warn' | 'error';
     logCommunications: boolean;
     logModelSelection?: boolean;
+    logAccessPatterns?: boolean;
   };
   modelSelection?: {
     availableModels: ModelConfig[];
@@ -495,6 +792,47 @@ interface OrchestrationConfig {
     };
   };
 }
+```
+
+### Access Patterns Config
+
+```typescript
+interface AccessPatternsConfig {
+  /** Enable the access patterns system */
+  enabled: boolean;
+  /** Global access patterns that apply to all agents */
+  globalPatterns?: AccessPattern[];
+  /** Cache access pattern evaluations for performance */
+  enableCaching?: boolean;
+  /** Maximum cache size for access pattern evaluations */
+  maxCacheSize?: number;
+}
+
+interface AccessPatternObject {
+  id: string;
+  description: string;
+  filePatterns?: string[];
+  operations?: OperationType[];
+  validate?: AccessPatternFunction;
+  allow: boolean;
+  priority: number;
+  config?: Record<string, any>;
+}
+
+type AccessPatternFunction = (context: AccessContext) => AccessPatternResult | Promise<AccessPatternResult>;
+
+abstract class AccessPatternClass {
+  abstract id: string;
+  abstract description: string;
+  abstract priority: number;
+  abstract validate(context: AccessContext): AccessPatternResult | Promise<AccessPatternResult>;
+  abstract appliesTo(context: AccessContext): boolean;
+}
+
+type AccessPattern = 
+  | AccessPatternObject       // Object configuration
+  | AccessPatternFunction     // Function validator
+  | AccessPatternClass;       // Class instance
 ```
 
 ### Model Selection Config
@@ -530,7 +868,7 @@ interface AgentCapability {
   id: string;                           // Unique agent identifier
   name: string;                         // Human-readable name
   description: string;                  // Purpose description
-  directoryPatterns: string[];          // Glob patterns for responsibility
+  accessPatterns: AccessPattern[];      // Modern access patterns
   tools: AgentTool[];                   // Granted tools for operations
   endpoints: AgentEndpoint[];           // Available operations
 }
@@ -580,8 +918,8 @@ The system provides comprehensive error handling:
 
 ## Performance Considerations
 
-- **Pattern Matching**: Uses efficient minimatch library for glob patterns
-- **Caching**: Agent lookups are optimized for repeated access
+- **Pattern Matching**: Uses efficient matching algorithms for access patterns
+- **Caching**: Agent lookups and pattern evaluations are optimized for repeated access
 - **Memory Management**: History buffers are automatically trimmed
 - **Async Operations**: All operations are non-blocking
 
@@ -590,7 +928,7 @@ The system provides comprehensive error handling:
 ### Agent Design
 
 1. **Single Responsibility**: Each agent should have a clear, focused purpose
-2. **Minimal Overlap**: Avoid overlapping directory patterns between agents
+2. **Minimal Overlap**: Avoid overlapping access patterns between agents
 3. **Clear Interfaces**: Define explicit endpoints for each agent
 4. **Error Handling**: Implement robust error handling in request handlers
 
@@ -667,6 +1005,69 @@ agentPreferences: {
 
 ## Troubleshooting
 
+### Access Pattern Issues
+
+1. **Pattern Not Matching**
+   - Verify file path normalization (paths are normalized to remove leading slashes)
+   - Check pattern priority - higher priority patterns override lower ones
+   - Test pattern with debugging: `orchestrator.testAccessPattern(agentId, filePath, operation)`
+   - Enable access pattern logging: `logAccessPatterns: true` in config
+
+2. **Performance Issues**
+   - Enable caching: `accessPatterns.enableCaching: true`
+   - Increase cache size: `accessPatterns.maxCacheSize: 2000`
+   - Simplify complex function patterns for high-volume operations
+   - Monitor cache hit rates: `orchestrator.getAccessPatternStats().cacheStats`
+
+3. **Function Pattern Errors**
+   - Wrap async operations in try-catch blocks
+   - Return proper AccessPatternResult objects
+   - Set reasonable timeouts for external calls
+   - Log errors within custom functions for debugging
+
+4. **Class Pattern Issues**
+   - Ensure class extends AccessPatternClass properly
+   - Implement all abstract methods (id, description, priority, validate, appliesTo)
+   - Handle async operations correctly in validate() method
+   - Test class instances before registering
+
+### Debugging Access Patterns
+
+```typescript
+// Enable detailed logging
+orchestrator.updateConfig({
+  logging: {
+    level: 'debug',
+    logAccessPatterns: true
+  }
+});
+
+// Test specific access patterns
+const debugResult = await orchestrator.testAccessPattern(
+  'my-agent',
+  'src/components/Button.tsx',
+  OperationType.EDIT_FILE
+);
+
+console.log('Access Pattern Debug:', {
+  allowed: debugResult.accessPatternResult.allowed,
+  reason: debugResult.accessPatternResult.reason,
+  patternId: debugResult.accessPatternResult.patternId,
+  metadata: debugResult.accessPatternResult.metadata
+});
+
+// Check agent pattern configuration
+const agent = orchestrator.getAgent('my-agent');
+console.log('Agent patterns:', {
+  hasAccessPatterns: !!agent?.accessPatterns?.length,
+  patternCount: agent?.accessPatterns?.length || 0
+});
+
+// Get system-wide statistics
+const stats = orchestrator.getAccessPatternStats();
+console.log('System Stats:', stats);
+```
+
 ### Model Selection Issues
 
 1. **No Model Selected**
@@ -696,7 +1097,7 @@ agentPreferences: {
 ### Common Issues
 
 1. **No Agent Found**
-   - Check directory patterns match target files
+   - Check access patterns match target files
    - Verify agent registration completed successfully
    - Review pattern specificity (more specific patterns win)
 
@@ -755,26 +1156,3 @@ The system is designed for extensibility:
 - **Custom Selection Logic**: Implement specialized model selection algorithms
 - **Model Adapters**: Create adapters for different AI service APIs
 - **Cost Tracking**: Implement detailed cost tracking and budget management
-
-## Migration Guide
-
-When upgrading or migrating:
-
-1. **Backup Configuration**: Save agent configurations, custom rules, and model settings
-2. **Test Permissions**: Verify permission rules work as expected with tools-based system
-3. **Validate Patterns**: Ensure directory patterns match intended files
-4. **Configure Models**: Set up model selection configuration and test auto mode
-5. **Monitor Events**: Watch for permission, routing, or model selection issues during transition
-6. **Cost Monitoring**: Establish cost tracking and budget alerts for model usage
-7. **Performance Testing**: Validate that model selection doesn't impact system performance
-
-### Model Selection Migration Checklist
-
-- [ ] Configure available models and their capabilities
-- [ ] Set up auto mode with appropriate thresholds
-- [ ] Define operation-specific model preferences
-- [ ] Configure agent-specific model preferences
-- [ ] Test model selection with various operation types
-- [ ] Monitor cost implications of model choices
-- [ ] Set up logging for model selection decisions
-- [ ] Establish fallback models for error scenarios

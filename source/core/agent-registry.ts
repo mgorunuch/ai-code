@@ -6,21 +6,46 @@ import { minimatch } from 'minimatch';
 import type { 
   AgentCapability, 
   AgentId, 
-  DirectoryPattern, 
   FilePath,
   PermissionResult,
-  OperationType,
-  AgentTool
+  AgentTool,
+  AccessPattern,
+  AccessContext,
+  AccessPatternResult,
+  AccessPatternsConfig
 } from './types.js';
+import { OperationType, AccessPatternClass } from './types.js';
 import { 
   hasAgentTool,
   getRequiredTool,
-  AgentTool as AgentToolEnum
+  AgentTool as AgentToolEnum,
+  createAccessContext
 } from './types.js';
+import { AccessPatternEvaluator } from './access-pattern-evaluator.js';
 
 export class AgentRegistry {
   private agents: Map<AgentId, AgentCapability> = new Map();
-  private directoryMappings: Map<DirectoryPattern, AgentId> = new Map();
+  private accessPatternEvaluator: AccessPatternEvaluator;
+  private accessPatternsConfig: AccessPatternsConfig;
+  private globalPatterns: AccessPattern[] = [];
+
+  constructor(accessPatternsConfig?: AccessPatternsConfig) {
+    this.accessPatternsConfig = {
+      enabled: true,
+      enableCaching: true,
+      maxCacheSize: 1000,
+      ...accessPatternsConfig
+    };
+
+    this.accessPatternEvaluator = new AccessPatternEvaluator({
+      enableCaching: this.accessPatternsConfig.enableCaching,
+      maxCacheSize: this.accessPatternsConfig.maxCacheSize
+    });
+
+    if (this.accessPatternsConfig.globalPatterns) {
+      this.globalPatterns = this.accessPatternsConfig.globalPatterns;
+    }
+  }
 
   /**
    * Register a new agent with its capabilities
@@ -35,12 +60,8 @@ export class AgentRegistry {
     // Register the agent
     this.agents.set(agent.id, agent);
 
-    // Update directory mappings
-    for (const pattern of agent.directoryPatterns) {
-      this.directoryMappings.set(pattern, agent.id);
-    }
-
-    console.log(`Agent registered: ${agent.id} (${agent.name}) with tools: [${agent.tools.join(', ')}]`);
+    const patternsInfo = this.getAgentPatternsInfo(agent);
+    console.log(`Agent registered: ${agent.id} (${agent.name}) with tools: [${agent.tools.join(', ')}] and ${patternsInfo}`);
   }
 
   /**
@@ -50,11 +71,6 @@ export class AgentRegistry {
     const agent = this.agents.get(agentId);
     if (!agent) {
       return false;
-    }
-
-    // Remove directory mappings
-    for (const pattern of agent.directoryPatterns) {
-      this.directoryMappings.delete(pattern);
     }
 
     // Remove agent
@@ -79,23 +95,40 @@ export class AgentRegistry {
   }
 
   /**
-   * Find the responsible agent for a given file path
+   * Find the responsible agent for a given file path using access patterns
    */
-  findResponsibleAgent(filePath: FilePath): AgentCapability | undefined {
-    // Normalize the file path
-    const normalizedPath = this.normalizePath(filePath);
+  async findResponsibleAgent(filePath: FilePath, operation?: OperationType): Promise<AgentCapability | undefined> {
+    return this.findResponsibleAgentWithAccessPatterns(filePath, operation);
+  }
 
-    // Find the most specific pattern match
-    let bestMatch: { agent: AgentCapability; specificity: number } | undefined;
+  /**
+   * Find responsible agent using the new access patterns system
+   */
+  async findResponsibleAgentWithAccessPatterns(
+    filePath: FilePath, 
+    operation?: OperationType
+  ): Promise<AgentCapability | undefined> {
+    const context = createAccessContext(
+      filePath,
+      operation || OperationType.READ_FILE,
+      'system' // System is requesting to find responsible agent
+    );
+
+    let bestMatch: { agent: AgentCapability; result: AccessPatternResult } | undefined;
 
     for (const agent of this.agents.values()) {
-      for (const pattern of agent.directoryPatterns) {
-        if (minimatch(normalizedPath, pattern)) {
-          const specificity = this.calculatePatternSpecificity(pattern);
-          
-          if (!bestMatch || specificity > bestMatch.specificity) {
-            bestMatch = { agent, specificity };
-          }
+      const patterns = this.getEffectiveAccessPatterns(agent);
+      const results = await this.accessPatternEvaluator.evaluatePatterns(patterns, context);
+      
+      // Find the best matching result for this agent
+      const bestResult = this.accessPatternEvaluator.getBestMatch(results.filter(r => r.allowed));
+      
+      if (bestResult) {
+        const priority = (bestResult.metadata?.priority as number) || 0;
+        const currentPriority = (bestMatch?.result.metadata?.priority as number) || 0;
+        
+        if (!bestMatch || priority > currentPriority) {
+          bestMatch = { agent, result: bestResult };
         }
       }
     }
@@ -103,10 +136,11 @@ export class AgentRegistry {
     return bestMatch?.agent;
   }
 
+
   /**
    * Find agents that can answer questions about a given domain
    */
-  findQuestionAgents(context?: { filePaths?: FilePath[]; domain?: string }): AgentCapability[] {
+  async findQuestionAgents(context?: { filePaths?: FilePath[]; domain?: string }): Promise<AgentCapability[]> {
     const questionAgents: AgentCapability[] = [];
 
     for (const agent of this.agents.values()) {
@@ -118,9 +152,15 @@ export class AgentRegistry {
 
       // If file paths provided, check if agent is responsible for any of them
       if (context?.filePaths && context.filePaths.length > 0) {
-        const hasRelevantFiles = context.filePaths.some(filePath => 
-          this.findResponsibleAgent(filePath)?.id === agent.id
-        );
+        // Check asynchronously for each file path
+        let hasRelevantFiles = false;
+        for (const filePath of context.filePaths) {
+          const responsibleAgent = await this.findResponsibleAgent(filePath);
+          if (responsibleAgent?.id === agent.id) {
+            hasRelevantFiles = true;
+            break;
+          }
+        }
         if (hasRelevantFiles) {
           questionAgents.push(agent);
         }
@@ -162,21 +202,19 @@ export class AgentRegistry {
       };
     }
 
-    const responsibleAgent = this.findResponsibleAgent(filePath);
-    const isResponsibleAgent = responsibleAgent?.id === agentId;
-    const isGlobalAccess = !isResponsibleAgent;
-    const requiredTool = getRequiredTool(operation, filePath, isGlobalAccess);
+    // For permission checking, we need to handle this differently since findResponsibleAgent is now async
+    // For now, we'll use a simpler approach
+    const requiredTool = getRequiredTool(operation, filePath, false);
     
     // Check if agent has the required tool
     const hasRequiredTool = hasAgentTool(agent, requiredTool);
     
     // Special case for read operations
     if (operation === OperationType.READ_FILE) {
-      // Agent can read its own files with READ_LOCAL tool
-      if (isResponsibleAgent && hasAgentTool(agent, AgentToolEnum.READ_LOCAL)) {
+      // Agent can read files with READ_LOCAL tool
+      if (hasAgentTool(agent, AgentToolEnum.READ_LOCAL)) {
         return { 
           allowed: true, 
-          responsibleAgent,
           requiredTool: AgentToolEnum.READ_LOCAL,
           availableTools: agent.tools
         };
@@ -186,7 +224,6 @@ export class AgentRegistry {
       if (hasAgentTool(agent, AgentToolEnum.READ_GLOBAL)) {
         return { 
           allowed: true, 
-          responsibleAgent,
           requiredTool: AgentToolEnum.READ_GLOBAL,
           availableTools: agent.tools
         };
@@ -195,7 +232,6 @@ export class AgentRegistry {
       return {
         allowed: false,
         reason: `Agent ${agentId} lacks required tool for reading ${filePath}. Required: ${requiredTool}`,
-        responsibleAgent,
         requiredTool,
         availableTools: agent.tools
       };
@@ -203,37 +239,18 @@ export class AgentRegistry {
 
     // Check write permissions (includes edit, delete, create)
     if ([OperationType.WRITE_FILE, OperationType.EDIT_FILE, OperationType.DELETE_FILE].includes(operation)) {
-      // Only the responsible agent can perform write operations
-      if (isResponsibleAgent && hasRequiredTool) {
+      // Check if agent has required tool
+      if (hasRequiredTool) {
         return { 
           allowed: true, 
-          responsibleAgent,
           requiredTool,
           availableTools: agent.tools
         };
       }
 
-      // If no responsible agent, check if this agent has required tool and matches patterns
-      if (!responsibleAgent) {
-        const normalizedPath = this.normalizePath(filePath);
-        const matchesPattern = agent.directoryPatterns.some(pattern => 
-          minimatch(normalizedPath, pattern)
-        );
-        
-        if (matchesPattern && hasRequiredTool) {
-          return { 
-            allowed: true, 
-            responsibleAgent: agent,
-            requiredTool,
-            availableTools: agent.tools
-          };
-        }
-      }
-
       return {
         allowed: false,
-        reason: `Agent ${agentId} lacks required tool or responsibility for ${filePath}. Required: ${requiredTool}, Responsible agent: ${responsibleAgent?.id || 'none'}`,
-        responsibleAgent,
+        reason: `Agent ${agentId} lacks required tool for ${filePath}. Required: ${requiredTool}`,
         requiredTool,
         availableTools: agent.tools
       };
@@ -248,19 +265,131 @@ export class AgentRegistry {
     };
   }
 
+
+
   /**
-   * Get agents by directory pattern
+   * Get effective access patterns for an agent (including global patterns)
    */
-  getAgentsByPattern(pattern: DirectoryPattern): AgentCapability[] {
-    const agents: AgentCapability[] = [];
-    
-    for (const agent of this.agents.values()) {
-      if (agent.directoryPatterns.includes(pattern)) {
-        agents.push(agent);
-      }
+  private getEffectiveAccessPatterns(agent: AgentCapability): AccessPattern[] {
+    const patterns: AccessPattern[] = [];
+
+    // Add global patterns first (lower priority)
+    patterns.push(...this.globalPatterns);
+
+    // Add agent-specific patterns
+    patterns.push(...agent.accessPatterns);
+
+    return patterns;
+  }
+
+  /**
+   * Get human-readable info about agent patterns
+   */
+  private getAgentPatternsInfo(agent: AgentCapability): string {
+    const accessCount = agent.accessPatterns.length;
+    const types = new Set(agent.accessPatterns.map(p => {
+      if (typeof p === 'function') return 'function';
+      if (p instanceof AccessPatternClass) return 'class';
+      return 'object';
+    }));
+    return `${accessCount} access patterns (${Array.from(types).join(', ')})`;
+  }
+
+  /**
+   * Check if an agent can access a file with the new access patterns system
+   */
+  async checkAgentAccess(
+    agentId: AgentId,
+    filePath: FilePath,
+    operation: OperationType
+  ): Promise<AccessPatternResult> {
+    const agent = this.getAgent(agentId);
+    if (!agent) {
+      return {
+        allowed: false,
+        reason: `Agent ${agentId} not found`,
+        patternId: 'system'
+      };
     }
 
-    return agents;
+    const context = createAccessContext(filePath, operation, agentId);
+    const patterns = this.getEffectiveAccessPatterns(agent);
+    
+    if (patterns.length === 0) {
+      return {
+        allowed: false,
+        reason: `No access patterns defined for agent ${agentId}`,
+        patternId: 'system'
+      };
+    }
+
+    const results = await this.accessPatternEvaluator.evaluatePatterns(patterns, context);
+    const bestMatch = this.accessPatternEvaluator.getBestMatch(results);
+
+    return bestMatch || {
+      allowed: false,
+      reason: 'No matching access patterns found',
+      patternId: 'system'
+    };
+  }
+
+  /**
+   * Add a global access pattern
+   */
+  addGlobalPattern(pattern: AccessPattern): void {
+    this.globalPatterns.push(pattern);
+  }
+
+  /**
+   * Remove a global access pattern
+   */
+  removeGlobalPattern(patternId: string): boolean {
+    const index = this.globalPatterns.findIndex(pattern => {
+      if (typeof pattern === 'function') return false;
+      if (pattern instanceof AccessPatternClass) return pattern.id === patternId;
+      return pattern.id === patternId;
+    });
+
+    if (index >= 0) {
+      this.globalPatterns.splice(index, 1);
+      return true;
+    }
+
+    return false;
+  }
+
+  /**
+   * Get access pattern statistics
+   */
+  getAccessPatternStats(): {
+    totalAgents: number;
+    agentsWithAccessPatterns: number;
+    globalPatterns: number;
+    cacheStats: ReturnType<AccessPatternEvaluator['getCacheStats']>;
+  } {
+    const agents = Array.from(this.agents.values());
+    
+    return {
+      totalAgents: agents.length,
+      agentsWithAccessPatterns: agents.filter(a => a.accessPatterns && a.accessPatterns.length > 0).length,
+      globalPatterns: this.globalPatterns.length,
+      cacheStats: this.accessPatternEvaluator.getCacheStats()
+    };
+  }
+
+  /**
+   * Update access patterns configuration
+   */
+  updateAccessPatternsConfig(config: Partial<AccessPatternsConfig>): void {
+    this.accessPatternsConfig = { ...this.accessPatternsConfig, ...config };
+    
+    // Update evaluator if caching settings changed
+    if (config.enableCaching !== undefined || config.maxCacheSize !== undefined) {
+      this.accessPatternEvaluator = new AccessPatternEvaluator({
+        enableCaching: this.accessPatternsConfig.enableCaching,
+        maxCacheSize: this.accessPatternsConfig.maxCacheSize
+      });
+    }
   }
 
   /**
@@ -275,8 +404,9 @@ export class AgentRegistry {
       throw new Error('Agent must have a valid string name');
     }
 
-    if (!Array.isArray(agent.directoryPatterns) || agent.directoryPatterns.length === 0) {
-      throw new Error('Agent must have at least one directory pattern');
+    // Validate that agent has accessPatterns
+    if (!Array.isArray(agent.accessPatterns) || agent.accessPatterns.length === 0) {
+      throw new Error('Agent must have at least one access pattern');
     }
 
     if (!Array.isArray(agent.endpoints)) {
@@ -310,50 +440,10 @@ export class AgentRegistry {
       throw new Error(`Agent with ID ${newAgent.id} already exists`);
     }
 
-    // Check for overlapping directory patterns that could cause conflicts
-    for (const pattern of newAgent.directoryPatterns) {
-      for (const existingAgent of this.agents.values()) {
-        for (const existingPattern of existingAgent.directoryPatterns) {
-          if (this.patternsOverlap(pattern, existingPattern)) {
-            console.warn(
-              `Warning: Directory pattern conflict between ${newAgent.id} (${pattern}) and ${existingAgent.id} (${existingPattern})`
-            );
-          }
-        }
-      }
-    }
+    // TODO: Add sophisticated conflict detection for access patterns
+    // This would involve evaluating patterns against common file paths to detect overlaps
   }
 
-  /**
-   * Check if two patterns overlap
-   */
-  private patternsOverlap(pattern1: string, pattern2: string): boolean {
-    // Simple overlap detection - could be enhanced
-    return pattern1 === pattern2 || 
-           pattern1.includes(pattern2) || 
-           pattern2.includes(pattern1);
-  }
-
-  /**
-   * Calculate pattern specificity (higher = more specific)
-   */
-  private calculatePatternSpecificity(pattern: string): number {
-    let specificity = 0;
-    
-    // More path segments = more specific
-    specificity += pattern.split('/').length;
-    
-    // Fewer wildcards = more specific
-    const wildcards = (pattern.match(/\*/g) || []).length;
-    specificity -= wildcards;
-    
-    // Exact matches = more specific
-    if (!pattern.includes('*') && !pattern.includes('?')) {
-      specificity += 10;
-    }
-
-    return specificity;
-  }
 
   /**
    * Normalize file path for consistent matching

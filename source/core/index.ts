@@ -13,19 +13,17 @@ export type {
   AgentCapability,
   AgentEndpoint,
   AgentId,
-  DirectoryPattern,
   FilePath,
   OperationRequest,
   OperationResponse,
-  OperationType,
   PermissionResult,
   AgentMessage,
   QuestionRequest,
   QuestionResponse,
   OrchestrationConfig,
   OrchestrationEvents,
+  AgentTool,
   // Model selection types
-  AIModel,
   ModelCapabilities,
   ModelConfig,
   AutoModeConfig,
@@ -33,6 +31,7 @@ export type {
   ModelSelectionResult
 } from './types.js';
 
+// Re-export enums for convenience
 export { OperationType, AIModel, AgentTool } from './types.js';
 
 // Core systems
@@ -41,6 +40,10 @@ export { PermissionSystem } from './permissions.js';
 export { AgentCommunicationSystem } from './communication.js';
 export { CoreOrchestrator } from './orchestrator.js';
 export { ModelSelector, createModelSelector } from './model-selector.js';
+
+// Import the actual types we need
+import type { AgentCapability, AgentTool, OrchestrationConfig } from './types.js';
+import { CoreOrchestrator } from './orchestrator.js';
 
 // Permission system types
 export type { PermissionRule, PermissionAuditLog } from './permissions.js';
@@ -70,23 +73,32 @@ export function generateRequestId(): string {
 }
 
 /**
- * Utility function to create a basic agent capability
+ * Utility function to create a basic agent capability with access patterns
  */
 export function createAgentCapability(
   id: string,
   name: string,
-  directoryPatterns: string[],
+  filePatterns: string[],
   options?: {
     description?: string;
     tools?: Array<AgentTool>;
     endpoints?: Array<{ name: string; description: string; }>;
+    priority?: number;
   }
 ): AgentCapability {
   return {
     id,
     name,
-    description: options?.description || `Agent responsible for ${directoryPatterns.join(', ')}`,
-    directoryPatterns,
+    description: options?.description || `Agent responsible for ${filePatterns.join(', ')}`,
+    accessPatterns: [
+      {
+        id: `${id}-main-pattern`,
+        description: `Main access pattern for ${name}`,
+        filePatterns,
+        allow: true,
+        priority: options?.priority || 20
+      }
+    ],
     tools: options?.tools || [AgentTool.READ_LOCAL, AgentTool.INTER_AGENT_COMMUNICATION],
     endpoints: options?.endpoints || [
       { name: 'question', description: 'Answer questions about this domain' },
@@ -110,11 +122,11 @@ export const DefaultAgents = {
       {
         description: 'Manages React components, pages, and frontend code',
         tools: [
-          import('./types.js').AgentTool.READ_LOCAL,
-          import('./types.js').AgentTool.EDIT_FILES,
-          import('./types.js').AgentTool.CREATE_FILES,
-          import('./types.js').AgentTool.DELETE_FILES,
-          import('./types.js').AgentTool.INTER_AGENT_COMMUNICATION
+          AgentTool.READ_LOCAL,
+          AgentTool.EDIT_FILES,
+          AgentTool.CREATE_FILES,
+          AgentTool.DELETE_FILES,
+          AgentTool.INTER_AGENT_COMMUNICATION
         ],
         endpoints: [
           { name: 'question', description: 'Answer questions about React components and frontend code' },
@@ -136,13 +148,13 @@ export const DefaultAgents = {
       {
         description: 'Manages TypeScript code, business logic, and core functionality',
         tools: [
-          import('./types.js').AgentTool.READ_LOCAL,
-          import('./types.js').AgentTool.READ_GLOBAL,
-          import('./types.js').AgentTool.EDIT_FILES,
-          import('./types.js').AgentTool.CREATE_FILES,
-          import('./types.js').AgentTool.DELETE_FILES,
-          import('./types.js').AgentTool.CREATE_DIRECTORIES,
-          import('./types.js').AgentTool.INTER_AGENT_COMMUNICATION
+          AgentTool.READ_LOCAL,
+          AgentTool.READ_GLOBAL,
+          AgentTool.EDIT_FILES,
+          AgentTool.CREATE_FILES,
+          AgentTool.DELETE_FILES,
+          AgentTool.CREATE_DIRECTORIES,
+          AgentTool.INTER_AGENT_COMMUNICATION
         ],
         endpoints: [
           { name: 'question', description: 'Answer questions about TypeScript code and business logic' },
@@ -164,12 +176,12 @@ export const DefaultAgents = {
       {
         description: 'Manages test files and testing infrastructure',
         tools: [
-          import('./types.js').AgentTool.READ_LOCAL,
-          import('./types.js').AgentTool.READ_GLOBAL,
-          import('./types.js').AgentTool.EDIT_FILES,
-          import('./types.js').AgentTool.CREATE_FILES,
-          import('./types.js').AgentTool.DELETE_FILES,
-          import('./types.js').AgentTool.INTER_AGENT_COMMUNICATION
+          AgentTool.READ_LOCAL,
+          AgentTool.READ_GLOBAL,
+          AgentTool.EDIT_FILES,
+          AgentTool.CREATE_FILES,
+          AgentTool.DELETE_FILES,
+          AgentTool.INTER_AGENT_COMMUNICATION
         ],
         endpoints: [
           { name: 'question', description: 'Answer questions about tests and testing strategies' },
@@ -191,11 +203,11 @@ export const DefaultAgents = {
       {
         description: 'Manages configuration files and project settings',
         tools: [
-          import('./types.js').AgentTool.READ_LOCAL,
-          import('./types.js').AgentTool.EDIT_FILES,
-          import('./types.js').AgentTool.CREATE_FILES,
-          import('./types.js').AgentTool.DELETE_FILES,
-          import('./types.js').AgentTool.INTER_AGENT_COMMUNICATION
+          AgentTool.READ_LOCAL,
+          AgentTool.EDIT_FILES,
+          AgentTool.CREATE_FILES,
+          AgentTool.DELETE_FILES,
+          AgentTool.INTER_AGENT_COMMUNICATION
         ],
         endpoints: [
           { name: 'question', description: 'Answer questions about project configuration' },
@@ -217,12 +229,12 @@ export const DefaultAgents = {
       {
         description: 'Manages documentation, README files, and markdown content',
         tools: [
-          import('./types.js').AgentTool.READ_LOCAL,
-          import('./types.js').AgentTool.READ_GLOBAL,
-          import('./types.js').AgentTool.EDIT_FILES,
-          import('./types.js').AgentTool.CREATE_FILES,
-          import('./types.js').AgentTool.DELETE_FILES,
-          import('./types.js').AgentTool.INTER_AGENT_COMMUNICATION
+          AgentTool.READ_LOCAL,
+          AgentTool.READ_GLOBAL,
+          AgentTool.EDIT_FILES,
+          AgentTool.CREATE_FILES,
+          AgentTool.DELETE_FILES,
+          AgentTool.INTER_AGENT_COMMUNICATION
         ],
         endpoints: [
           { name: 'question', description: 'Answer questions about project documentation' },
