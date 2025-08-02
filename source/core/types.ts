@@ -50,12 +50,6 @@ export interface AgentCapability {
   tools: AgentTool[];
   /** Endpoints this agent exposes */
   endpoints: AgentEndpoint[];
-  
-  // Legacy properties for backward compatibility (deprecated)
-  /** @deprecated Use tools array instead. Whether this agent can edit files in its directories */
-  canEdit?: boolean;
-  /** @deprecated Use tools array instead. Whether this agent can read files outside its directories */
-  canReadGlobally?: boolean;
 }
 
 /**
@@ -202,42 +196,6 @@ export function getRequiredTool(
   return OPERATION_TOOL_MAP[operation];
 }
 
-/**
- * Convert legacy boolean permissions to tools array
- */
-export function legacyPermissionsToTools(
-  canEdit?: boolean, 
-  canReadGlobally?: boolean
-): AgentTool[] {
-  const tools: AgentTool[] = [AgentTool.READ_LOCAL, AgentTool.INTER_AGENT_COMMUNICATION];
-  
-  if (canEdit) {
-    tools.push(
-      AgentTool.EDIT_FILES,
-      AgentTool.CREATE_FILES,
-      AgentTool.DELETE_FILES,
-      AgentTool.CREATE_DIRECTORIES
-    );
-  }
-  
-  if (canReadGlobally) {
-    tools.push(AgentTool.READ_GLOBAL);
-  }
-  
-  return tools;
-}
-
-/**
- * Normalize agent capability to ensure tools array is populated
- */
-export function normalizeAgentCapability(agent: AgentCapability): AgentCapability {
-  if (!agent.tools || agent.tools.length === 0) {
-    // Convert legacy properties to tools
-    agent.tools = legacyPermissionsToTools(agent.canEdit, agent.canReadGlobally);
-  }
-  
-  return agent;
-}
 
 /**
  * Agent question response
@@ -257,6 +215,138 @@ export interface QuestionResponse {
 }
 
 /**
+ * Available AI models for different operations
+ */
+export enum AIModel {
+  /** Claude 3.5 Sonnet - Balanced performance for most tasks */
+  CLAUDE_3_5_SONNET = 'claude-3-5-sonnet-20241022',
+  /** Claude 3 Opus - Maximum capability for complex tasks */
+  CLAUDE_3_OPUS = 'claude-3-opus-20240229',
+  /** Claude 3 Haiku - Fast and efficient for simple tasks */
+  CLAUDE_3_HAIKU = 'claude-3-haiku-20240307',
+  /** GPT-4 Turbo - OpenAI's latest model */
+  GPT_4_TURBO = 'gpt-4-turbo-preview',
+  /** GPT-3.5 Turbo - Fast and cost-effective */
+  GPT_3_5_TURBO = 'gpt-3.5-turbo',
+  /** Custom model for specific use cases */
+  CUSTOM = 'custom'
+}
+
+/**
+ * Model capability characteristics
+ */
+export interface ModelCapabilities {
+  /** Maximum context length */
+  maxContextLength: number;
+  /** Cost per 1K tokens (input) */
+  costPerKInput: number;
+  /** Cost per 1K tokens (output) */
+  costPerKOutput: number;
+  /** Relative speed (1-10, 10 being fastest) */
+  speed: number;
+  /** Reasoning capability (1-10, 10 being best) */
+  reasoning: number;
+  /** Code generation quality (1-10, 10 being best) */
+  codeGeneration: number;
+  /** Analysis quality (1-10, 10 being best) */
+  analysis: number;
+  /** Creative writing quality (1-10, 10 being best) */
+  creativity: number;
+  /** Factual accuracy (1-10, 10 being best) */
+  accuracy: number;
+  /** Language support quality (1-10, 10 being best) */
+  multiLanguage: number;
+}
+
+/**
+ * Model configuration
+ */
+export interface ModelConfig {
+  /** Model identifier */
+  model: AIModel;
+  /** Model display name */
+  name: string;
+  /** Model description */
+  description: string;
+  /** Model capabilities */
+  capabilities: ModelCapabilities;
+  /** Whether this model is available */
+  available: boolean;
+  /** API provider (anthropic, openai, etc.) */
+  provider: string;
+  /** Custom API endpoint if using custom model */
+  endpoint?: string;
+  /** Additional configuration options */
+  options?: Record<string, any>;
+}
+
+/**
+ * Auto mode configuration for intelligent model selection
+ */
+export interface AutoModeConfig {
+  /** Whether auto mode is enabled */
+  enabled: boolean;
+  /** Preferred models in order of preference */
+  preferredModels: AIModel[];
+  /** Cost threshold for automatic selection (USD per request) */
+  costThreshold?: number;
+  /** Performance threshold for selection (1-10) */
+  performanceThreshold?: number;
+  /** Context length threshold for model selection */
+  contextLengthThreshold?: number;
+  /** Operation-specific model preferences */
+  operationPreferences?: Partial<Record<OperationType, AIModel[]>>;
+  /** Agent-specific model preferences */
+  agentPreferences?: Record<AgentId, AIModel[]>;
+  /** Fallback model if preferred models are unavailable */
+  fallbackModel: AIModel;
+}
+
+/**
+ * Model selection criteria for operation
+ */
+export interface ModelSelectionCriteria {
+  /** Type of operation being performed */
+  operationType: OperationType;
+  /** Requesting agent ID */
+  agentId?: AgentId;
+  /** Estimated complexity (1-10) */
+  complexity?: number;
+  /** Estimated context length needed */
+  contextLength?: number;
+  /** Priority level (1-10, 10 being highest) */
+  priority?: number;
+  /** Maximum cost willing to spend */
+  maxCost?: number;
+  /** Required capabilities */
+  requiredCapabilities?: Partial<ModelCapabilities>;
+  /** Custom selection factors */
+  customFactors?: Record<string, any>;
+}
+
+/**
+ * Model selection result
+ */
+export interface ModelSelectionResult {
+  /** Selected model */
+  selectedModel: AIModel;
+  /** Reason for selection */
+  reason: string;
+  /** Selection confidence (0-1) */
+  confidence: number;
+  /** Estimated cost for operation */
+  estimatedCost?: number;
+  /** Alternative models considered */
+  alternatives?: Array<{
+    model: AIModel;
+    score: number;
+    reason: string;
+  }>;
+  /** Selection metadata */
+  metadata?: Record<string, any>;
+}
+
+/**
  * Orchestration configuration
  */
 export interface OrchestrationConfig {
@@ -268,11 +358,6 @@ export interface OrchestrationConfig {
     defaultTools: AgentTool[];
     /** Require explicit tool grants for sensitive operations */
     requireExplicitToolGrants: boolean;
-    // Legacy properties for backward compatibility (deprecated)
-    /** @deprecated Use defaultTools instead. Allow global read access by default */
-    allowGlobalRead?: boolean;
-    /** @deprecated Use requireExplicitToolGrants instead. Require explicit permission for writes */
-    requireExplicitWritePermission?: boolean;
   };
   /** Logging configuration */
   logging: {
@@ -280,6 +365,26 @@ export interface OrchestrationConfig {
     level: 'debug' | 'info' | 'warn' | 'error';
     /** Whether to log inter-agent communications */
     logCommunications: boolean;
+    /** Whether to log model selection decisions */
+    logModelSelection?: boolean;
+  };
+  /** Model selection configuration */
+  modelSelection?: {
+    /** Available model configurations */
+    availableModels: ModelConfig[];
+    /** Auto mode configuration */
+    autoMode: AutoModeConfig;
+    /** Default model for operations when auto mode is disabled */
+    defaultModel: AIModel;
+    /** Model selection settings */
+    selectionStrategy: 'cost-optimized' | 'performance-optimized' | 'balanced' | 'custom';
+    /** Custom scoring weights for model selection */
+    customWeights?: {
+      cost: number;
+      speed: number;
+      quality: number;
+      accuracy: number;
+    };
   };
 }
 
@@ -295,4 +400,7 @@ export interface OrchestrationEvents {
   agentCommunication: (message: AgentMessage) => void;
   toolAccessDenied: (agentId: AgentId, tool: AgentTool, context?: string) => void;
   toolAccessGranted: (agentId: AgentId, tool: AgentTool, context?: string) => void;
+  modelSelected: (criteria: ModelSelectionCriteria, result: ModelSelectionResult) => void;
+  modelSelectionFailed: (criteria: ModelSelectionCriteria, error: string) => void;
+  autoModeTriggered: (criteria: ModelSelectionCriteria) => void;
 }

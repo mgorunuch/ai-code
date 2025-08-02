@@ -174,11 +174,9 @@ export class PermissionSystem {
     for (const pattern of agent.directoryPatterns) {
       // Simple pattern matching for directory
       if (normalizedDir.startsWith(pattern.replace('**/', '').replace('/*', ''))) {
-        // Check operation-specific permissions
-        if (operation === OperationType.READ_FILE && agent.canReadGlobally) {
-          return { allowed: true };
-        }
-        if ([OperationType.WRITE_FILE, OperationType.EDIT_FILE, OperationType.DELETE_FILE].includes(operation) && agent.canEdit) {
+        // Check if agent has required tools for this operation
+        const requiredTool = getRequiredTool(operation, directoryPath);
+        if (hasAgentTool(agent, requiredTool)) {
           return { allowed: true };
         }
       }
@@ -197,9 +195,6 @@ export class PermissionSystem {
     directoryPatterns: string[];
     tools: AgentTool[];
     customRules: PermissionRule[];
-    // Legacy properties for backward compatibility
-    canEdit?: boolean;
-    canReadGlobally?: boolean;
   } {
     const agent = this.agentRegistry.getAgent(agentId);
     if (!agent) {
@@ -210,9 +205,6 @@ export class PermissionSystem {
       directoryPatterns: agent.directoryPatterns,
       tools: agent.tools,
       customRules: this.getPermissionRules(agentId),
-      // Legacy support
-      canEdit: hasAgentTool(agent, AgentToolEnum.EDIT_FILES),
-      canReadGlobally: hasAgentTool(agent, AgentToolEnum.READ_GLOBAL)
     };
   }
 

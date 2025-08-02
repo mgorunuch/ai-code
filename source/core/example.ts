@@ -20,10 +20,7 @@ async function demonstrateOrchestrationSystem() {
   const orchestrator = createOrchestrator({
     defaultPermissions: {
       defaultTools: [AgentTool.READ_LOCAL, AgentTool.INTER_AGENT_COMMUNICATION],
-      requireExplicitToolGrants: true,
-      // Legacy support
-      allowGlobalRead: false,
-      requireExplicitWritePermission: true
+      requireExplicitToolGrants: true
     },
     logging: {
       level: 'info',
@@ -75,10 +72,7 @@ async function demonstrateOrchestrationSystem() {
       endpoints: [
         { name: 'question', description: 'Answer database questions' },
         { name: 'migrate', description: 'Run database migrations' }
-      ],
-      // Legacy support (will be ignored in favor of tools)
-      canEdit: true,
-      canReadGlobally: false
+      ]
     }
   );
 
@@ -119,7 +113,7 @@ async function demonstrateOrchestrationSystem() {
   // 4. Demonstrate tools-based permission system
   console.log('\n4. Testing tools-based permission system...');
   
-  // Try to make react-agent edit a TypeScript file (should fail due to lack of EDIT_FILES tool for that path)
+  // Try to make react-agent edit a TypeScript file (should fail due to routing to typescript-agent)
   try {
     await orchestrator.executeRequest({
       type: OperationType.EDIT_FILE,
@@ -228,7 +222,7 @@ async function demonstrateOrchestrationSystem() {
     console.log(`${agent.id}: tools=[${permissions.tools.join(', ')}], custom rules=${permissions.customRules.length}`);
   }
   
-  console.log('\n=== Tools-Based Permission System Demo Complete ===');
+  console.log('\n=== Core Orchestration System Demo Complete ===');
 }
 
 // Run the demonstration

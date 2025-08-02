@@ -23,22 +23,34 @@ export type {
   QuestionRequest,
   QuestionResponse,
   OrchestrationConfig,
-  OrchestrationEvents
+  OrchestrationEvents,
+  // Model selection types
+  AIModel,
+  ModelCapabilities,
+  ModelConfig,
+  AutoModeConfig,
+  ModelSelectionCriteria,
+  ModelSelectionResult
 } from './types.js';
 
-export { OperationType } from './types.js';
+export { OperationType, AIModel, AgentTool } from './types.js';
 
 // Core systems
 export { AgentRegistry } from './agent-registry.js';
 export { PermissionSystem } from './permissions.js';
 export { AgentCommunicationSystem } from './communication.js';
 export { CoreOrchestrator } from './orchestrator.js';
+export { ModelSelector, createModelSelector } from './model-selector.js';
 
 // Permission system types
 export type { PermissionRule, PermissionAuditLog } from './permissions.js';
 
 // Communication system types
 export type { CommunicationEvents } from './communication.js';
+
+// Model selector types and defaults
+export type { ModelSelectorEvents } from './model-selector.js';
+export { DEFAULT_MODEL_CONFIGS, DEFAULT_AUTO_MODE_CONFIG } from './model-selector.js';
 
 // Orchestrator types
 export type { RequestHandler, OrchestrationEvents as OrchestratorEvents } from './orchestrator.js';
@@ -66,8 +78,7 @@ export function createAgentCapability(
   directoryPatterns: string[],
   options?: {
     description?: string;
-    canEdit?: boolean;
-    canReadGlobally?: boolean;
+    tools?: Array<AgentTool>;
     endpoints?: Array<{ name: string; description: string; }>;
   }
 ): AgentCapability {
@@ -76,8 +87,7 @@ export function createAgentCapability(
     name,
     description: options?.description || `Agent responsible for ${directoryPatterns.join(', ')}`,
     directoryPatterns,
-    canEdit: options?.canEdit ?? true,
-    canReadGlobally: options?.canReadGlobally ?? false,
+    tools: options?.tools || [AgentTool.READ_LOCAL, AgentTool.INTER_AGENT_COMMUNICATION],
     endpoints: options?.endpoints || [
       { name: 'question', description: 'Answer questions about this domain' },
       { name: 'handle', description: 'Handle operations in this domain' }
@@ -99,8 +109,13 @@ export const DefaultAgents = {
       ['**/*.tsx', '**/*.jsx', '**/components/**', '**/pages/**', '**/hooks/**'],
       {
         description: 'Manages React components, pages, and frontend code',
-        canEdit: true,
-        canReadGlobally: false,
+        tools: [
+          import('./types.js').AgentTool.READ_LOCAL,
+          import('./types.js').AgentTool.EDIT_FILES,
+          import('./types.js').AgentTool.CREATE_FILES,
+          import('./types.js').AgentTool.DELETE_FILES,
+          import('./types.js').AgentTool.INTER_AGENT_COMMUNICATION
+        ],
         endpoints: [
           { name: 'question', description: 'Answer questions about React components and frontend code' },
           { name: 'validate', description: 'Validate React component structure and props' },
@@ -120,8 +135,15 @@ export const DefaultAgents = {
       ['**/*.ts', '**/src/**', '**/lib/**', '!**/*.test.ts', '!**/*.spec.ts'],
       {
         description: 'Manages TypeScript code, business logic, and core functionality',
-        canEdit: true,
-        canReadGlobally: true,
+        tools: [
+          import('./types.js').AgentTool.READ_LOCAL,
+          import('./types.js').AgentTool.READ_GLOBAL,
+          import('./types.js').AgentTool.EDIT_FILES,
+          import('./types.js').AgentTool.CREATE_FILES,
+          import('./types.js').AgentTool.DELETE_FILES,
+          import('./types.js').AgentTool.CREATE_DIRECTORIES,
+          import('./types.js').AgentTool.INTER_AGENT_COMMUNICATION
+        ],
         endpoints: [
           { name: 'question', description: 'Answer questions about TypeScript code and business logic' },
           { name: 'validate', description: 'Validate TypeScript code structure and types' },
@@ -141,8 +163,14 @@ export const DefaultAgents = {
       ['**/*.test.ts', '**/*.test.tsx', '**/*.spec.ts', '**/*.spec.tsx', '**/tests/**', '**/__tests__/**'],
       {
         description: 'Manages test files and testing infrastructure',
-        canEdit: true,
-        canReadGlobally: true,
+        tools: [
+          import('./types.js').AgentTool.READ_LOCAL,
+          import('./types.js').AgentTool.READ_GLOBAL,
+          import('./types.js').AgentTool.EDIT_FILES,
+          import('./types.js').AgentTool.CREATE_FILES,
+          import('./types.js').AgentTool.DELETE_FILES,
+          import('./types.js').AgentTool.INTER_AGENT_COMMUNICATION
+        ],
         endpoints: [
           { name: 'question', description: 'Answer questions about tests and testing strategies' },
           { name: 'validate', description: 'Validate test structure and coverage' },
@@ -162,8 +190,13 @@ export const DefaultAgents = {
       ['**/package.json', '**/tsconfig.json', '**/*.config.*', '**/.*rc.*', '**/.env*'],
       {
         description: 'Manages configuration files and project settings',
-        canEdit: true,
-        canReadGlobally: false,
+        tools: [
+          import('./types.js').AgentTool.READ_LOCAL,
+          import('./types.js').AgentTool.EDIT_FILES,
+          import('./types.js').AgentTool.CREATE_FILES,
+          import('./types.js').AgentTool.DELETE_FILES,
+          import('./types.js').AgentTool.INTER_AGENT_COMMUNICATION
+        ],
         endpoints: [
           { name: 'question', description: 'Answer questions about project configuration' },
           { name: 'validate', description: 'Validate configuration files' },
@@ -183,8 +216,14 @@ export const DefaultAgents = {
       ['**/*.md', '**/docs/**', '**/README*'],
       {
         description: 'Manages documentation, README files, and markdown content',
-        canEdit: true,
-        canReadGlobally: true,
+        tools: [
+          import('./types.js').AgentTool.READ_LOCAL,
+          import('./types.js').AgentTool.READ_GLOBAL,
+          import('./types.js').AgentTool.EDIT_FILES,
+          import('./types.js').AgentTool.CREATE_FILES,
+          import('./types.js').AgentTool.DELETE_FILES,
+          import('./types.js').AgentTool.INTER_AGENT_COMMUNICATION
+        ],
         endpoints: [
           { name: 'question', description: 'Answer questions about project documentation' },
           { name: 'generate', description: 'Generate documentation and README content' },

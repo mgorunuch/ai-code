@@ -13,7 +13,6 @@ import type {
   AgentTool
 } from './types.js';
 import { 
-  normalizeAgentCapability,
   hasAgentTool,
   getRequiredTool,
   AgentTool as AgentToolEnum
@@ -27,24 +26,21 @@ export class AgentRegistry {
    * Register a new agent with its capabilities
    */
   registerAgent(agent: AgentCapability): void {
-    // Normalize agent to ensure tools array is populated
-    const normalizedAgent = normalizeAgentCapability(agent);
-    
     // Validate agent configuration
-    this.validateAgentConfig(normalizedAgent);
+    this.validateAgentConfig(agent);
 
     // Check for conflicts with existing agents
-    this.checkForConflicts(normalizedAgent);
+    this.checkForConflicts(agent);
 
     // Register the agent
-    this.agents.set(normalizedAgent.id, normalizedAgent);
+    this.agents.set(agent.id, agent);
 
     // Update directory mappings
-    for (const pattern of normalizedAgent.directoryPatterns) {
-      this.directoryMappings.set(pattern, normalizedAgent.id);
+    for (const pattern of agent.directoryPatterns) {
+      this.directoryMappings.set(pattern, agent.id);
     }
 
-    console.log(`Agent registered: ${normalizedAgent.id} (${normalizedAgent.name}) with tools: [${normalizedAgent.tools.join(', ')}]`);
+    console.log(`Agent registered: ${agent.id} (${agent.name}) with tools: [${agent.tools.join(', ')}]`);
   }
 
   /**

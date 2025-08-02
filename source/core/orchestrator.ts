@@ -14,12 +14,16 @@ import type {
   QuestionRequest,
   QuestionResponse,
   OrchestrationConfig,
-  AgentTool
+  AgentTool,
+  ModelSelectionCriteria,
+  ModelSelectionResult,
+  AIModel
 } from './types.js';
-import { normalizeAgentCapability, AgentTool as AgentToolEnum } from './types.js';
+import { AgentTool as AgentToolEnum } from './types.js';
 import { AgentRegistry } from './agent-registry.js';
 import { PermissionSystem } from './permissions.js';
 import { AgentCommunicationSystem } from './communication.js';
+import { ModelSelector, createModelSelector, DEFAULT_MODEL_CONFIGS, DEFAULT_AUTO_MODE_CONFIG } from './model-selector.js';
 
 export interface RequestHandler {
   (request: OperationRequest): Promise<OperationResponse>;
@@ -35,12 +39,16 @@ export interface OrchestrationEvents {
   agentUnregistered: (agentId: AgentId) => void;
   toolAccessDenied: (agentId: AgentId, tool: AgentTool, context?: string) => void;
   toolAccessGranted: (agentId: AgentId, tool: AgentTool, context?: string) => void;
+  modelSelected: (criteria: ModelSelectionCriteria, result: ModelSelectionResult) => void;
+  modelSelectionFailed: (criteria: ModelSelectionCriteria, error: string) => void;
+  autoModeTriggered: (criteria: ModelSelectionCriteria) => void;
 }
 
 export class CoreOrchestrator extends EventEmitter {
   private agentRegistry: AgentRegistry;
   private permissionSystem: PermissionSystem;
   private communicationSystem: AgentCommunicationSystem;
+  private modelSelector: ModelSelector;
   private requestHandlers: Map<AgentId, RequestHandler> = new Map();
   private config: OrchestrationConfig;
   private requestHistory: Map<string, OperationRequest> = new Map();
@@ -49,19 +57,30 @@ export class CoreOrchestrator extends EventEmitter {
   constructor(config?: Partial<OrchestrationConfig>) {
     super();
 
-    // Initialize default configuration with backward compatibility
+    // Initialize default configuration
     this.config = {
       agents: [],
       defaultPermissions: {
         defaultTools: [AgentToolEnum.READ_LOCAL, AgentToolEnum.INTER_AGENT_COMMUNICATION],
-        requireExplicitToolGrants: true,
-        // Legacy support
-        allowGlobalRead: config?.defaultPermissions?.allowGlobalRead ?? false,
-        requireExplicitWritePermission: config?.defaultPermissions?.requireExplicitWritePermission ?? true
+        requireExplicitToolGrants: true
       },
       logging: {
         level: 'info',
-        logCommunications: true
+        logCommunications: true,
+        logModelSelection: config?.logging?.logModelSelection ?? true
+      },
+      // Default model selection configuration
+      modelSelection: {
+        availableModels: DEFAULT_MODEL_CONFIGS,
+        autoMode: DEFAULT_AUTO_MODE_CONFIG,
+        defaultModel: AIModel.CLAUDE_3_5_SONNET,
+        selectionStrategy: 'balanced',
+        customWeights: {
+          cost: 0.3,
+          speed: 0.2,
+          quality: 0.3,
+          accuracy: 0.2
+        }
       },
       ...config
     };
@@ -70,6 +89,12 @@ export class CoreOrchestrator extends EventEmitter {
     this.agentRegistry = new AgentRegistry();
     this.permissionSystem = new PermissionSystem(this.agentRegistry);
     this.communicationSystem = new AgentCommunicationSystem(this.agentRegistry);
+    
+    // Initialize model selector
+    this.modelSelector = createModelSelector(
+      this.config.modelSelection?.availableModels,
+      this.config.modelSelection?.autoMode
+    );
 
     // Register initial agents from config
     for (const agent of this.config.agents) {
@@ -77,7 +102,7 @@ export class CoreOrchestrator extends EventEmitter {
     }
 
     this.setupEventHandlers();
-    this.log('info', 'Core orchestrator initialized');
+    this.log('info', `Core orchestrator initialized with ${this.config.modelSelection?.availableModels.length || 0} available models`);
   }
 
   /**
@@ -85,17 +110,19 @@ export class CoreOrchestrator extends EventEmitter {
    */
   registerAgent(agent: AgentCapability, handler?: RequestHandler): void {
     try {
-      // Normalize agent to ensure tools array is populated
-      const normalizedAgent = normalizeAgentCapability(agent);
+      // Validate that agent has tools array populated
+      if (!agent.tools || agent.tools.length === 0) {
+        throw new Error(`Agent ${agent.id} must have tools array populated`);
+      }
       
-      this.agentRegistry.registerAgent(normalizedAgent);
+      this.agentRegistry.registerAgent(agent);
       
       if (handler) {
-        this.requestHandlers.set(normalizedAgent.id, handler);
+        this.requestHandlers.set(agent.id, handler);
       }
 
-      this.emit('agentRegistered', normalizedAgent);
-      this.log('info', `Agent registered: ${normalizedAgent.id} (${normalizedAgent.name}) with tools: [${normalizedAgent.tools.join(', ')}]`);
+      this.emit('agentRegistered', agent);
+      this.log('info', `Agent registered: ${agent.id} (${agent.name}) with tools: [${agent.tools.join(', ')}]`);
     } catch (error) {
       this.log('error', `Failed to register agent ${agent.id}:`, error);
       throw error;
@@ -179,8 +206,39 @@ export class CoreOrchestrator extends EventEmitter {
         }
       }
 
+      // Perform model selection for the operation
+      let modelSelection: ModelSelectionResult | undefined;
+      if (this.config.modelSelection?.autoMode.enabled) {
+        try {
+          modelSelection = this.selectModelForOperation(
+            request.type,
+            targetAgent.id,
+            {
+              contextLength: this.estimateContextLength(request),
+              complexity: this.estimateOperationComplexity(request),
+              priority: request.payload?.priority || 5
+            }
+          );
+          
+          // Emit model selection events
+          this.emit('modelSelected', {
+            operationType: request.type,
+            agentId: targetAgent.id,
+            contextLength: this.estimateContextLength(request),
+            complexity: this.estimateOperationComplexity(request)
+          }, modelSelection);
+          
+        } catch (modelError) {
+          this.log('warn', `Model selection failed: ${(modelError as Error).message}`);
+          this.emit('modelSelectionFailed', {
+            operationType: request.type,
+            agentId: targetAgent.id
+          }, (modelError as Error).message);
+        }
+      }
+
       // Execute the request
-      const response = await this.executeAgentRequest(targetAgent.id, request);
+      const response = await this.executeAgentRequest(targetAgent.id, request, modelSelection);
       
       // Store response in history
       this.responseHistory.set(request.requestId, response);
@@ -230,6 +288,86 @@ export class CoreOrchestrator extends EventEmitter {
   }
 
   /**
+   * Select the best model for an operation
+   */
+  selectModelForOperation(
+    operationType: OperationType,
+    agentId?: AgentId,
+    options?: {
+      complexity?: number;
+      contextLength?: number;
+      priority?: number;
+      maxCost?: number;
+      requiredCapabilities?: Partial<ModelSelectionCriteria['requiredCapabilities']>;
+    }
+  ): ModelSelectionResult {
+    if (!this.config.modelSelection) {
+      throw new Error('Model selection not configured');
+    }
+
+    const criteria: ModelSelectionCriteria = {
+      operationType,
+      agentId,
+      complexity: options?.complexity,
+      contextLength: options?.contextLength,
+      priority: options?.priority,
+      maxCost: options?.maxCost,
+      requiredCapabilities: options?.requiredCapabilities
+    };
+
+    const result = this.modelSelector.selectModel(criteria);
+    
+    // Log model selection if enabled
+    if (this.config.logging.logModelSelection) {
+      this.log('info', `Model selected for ${operationType}: ${result.selectedModel} (confidence: ${result.confidence.toFixed(2)}, reason: ${result.reason})`);
+    }
+
+    return result;
+  }
+
+  /**
+   * Get the current model selection configuration
+   */
+  getModelSelectionConfig() {
+    return {
+      availableModels: this.modelSelector.getAllModelConfigs(),
+      autoModeConfig: this.modelSelector.getAutoModeConfig(),
+      selectionStats: this.modelSelector.getSelectionStats(),
+      selectionHistory: this.modelSelector.getSelectionHistory(10)
+    };
+  }
+
+  /**
+   * Update model selection configuration
+   */
+  updateModelSelectionConfig(updates: {
+    autoModeConfig?: Partial<typeof DEFAULT_AUTO_MODE_CONFIG>;
+    modelConfigs?: typeof DEFAULT_MODEL_CONFIGS;
+    defaultModel?: AIModel;
+    selectionStrategy?: 'cost-optimized' | 'performance-optimized' | 'balanced' | 'custom';
+  }): void {
+    if (updates.autoModeConfig) {
+      this.modelSelector.updateAutoModeConfig(updates.autoModeConfig);
+    }
+
+    if (updates.modelConfigs) {
+      for (const config of updates.modelConfigs) {
+        this.modelSelector.updateModelConfig(config);
+      }
+    }
+
+    if (updates.defaultModel && this.config.modelSelection) {
+      this.config.modelSelection.defaultModel = updates.defaultModel;
+    }
+
+    if (updates.selectionStrategy && this.config.modelSelection) {
+      this.config.modelSelection.selectionStrategy = updates.selectionStrategy;
+    }
+
+    this.log('info', 'Model selection configuration updated');
+  }
+
+  /**
    * Get agents that can handle a specific file path
    */
   getAgentsForPath(filePath: FilePath): AgentCapability[] {
@@ -259,6 +397,7 @@ export class CoreOrchestrator extends EventEmitter {
     totalRequests: number;
     totalResponses: number;
     communicationStats: ReturnType<AgentCommunicationSystem['getStats']>;
+    modelSelectionStats: ReturnType<ModelSelector['getSelectionStats']>;
     agentStats: Map<AgentId, { requests: number; responses: number }>;
   } {
     const agents = this.agentRegistry.getAllAgents();
@@ -280,6 +419,7 @@ export class CoreOrchestrator extends EventEmitter {
       totalRequests: this.requestHistory.size,
       totalResponses: this.responseHistory.size,
       communicationStats: this.communicationSystem.getStats(),
+      modelSelectionStats: this.modelSelector.getSelectionStats(),
       agentStats
     };
   }
@@ -315,6 +455,7 @@ export class CoreOrchestrator extends EventEmitter {
     this.responseHistory.clear();
     this.communicationSystem.clearMessageHistory();
     this.permissionSystem.clearAuditLog();
+    this.modelSelector.clearSelectionHistory();
     this.log('info', 'All history cleared');
   }
 
@@ -370,7 +511,8 @@ export class CoreOrchestrator extends EventEmitter {
    */
   private async executeAgentRequest(
     agentId: AgentId,
-    request: OperationRequest
+    request: OperationRequest,
+    modelSelection?: ModelSelectionResult
   ): Promise<OperationResponse> {
     const handler = this.requestHandlers.get(agentId);
     
@@ -379,13 +521,28 @@ export class CoreOrchestrator extends EventEmitter {
     }
 
     try {
-      const response = await handler(request);
+      // Augment request with model selection if available
+      const enhancedRequest = {
+        ...request,
+        payload: {
+          ...request.payload,
+          modelSelection: modelSelection
+        }
+      };
+
+      const response = await handler(enhancedRequest);
       
-      // Ensure response has required fields
+      // Ensure response has required fields and include model info
       return {
         ...response,
         handledBy: agentId,
-        requestId: request.requestId
+        requestId: request.requestId,
+        metadata: {
+          ...response.metadata,
+          selectedModel: modelSelection?.selectedModel,
+          modelSelectionConfidence: modelSelection?.confidence,
+          estimatedCost: modelSelection?.estimatedCost
+        }
       };
     } catch (error) {
       throw new Error(`Agent ${agentId} failed to handle request: ${(error as Error).message}`);
@@ -393,7 +550,98 @@ export class CoreOrchestrator extends EventEmitter {
   }
 
   /**
-   * Setup event handlers for communication system
+   * Estimate context length needed for an operation
+   */
+  private estimateContextLength(request: OperationRequest): number {
+    let baseLength = 2000; // Base context for system prompts
+    
+    // Add payload content length
+    if (request.payload) {
+      const payloadStr = JSON.stringify(request.payload);
+      baseLength += payloadStr.length * 1.2; // Account for tokenization
+    }
+    
+    // Add file path context if present
+    if (request.filePath) {
+      baseLength += request.filePath.length;
+    }
+    
+    // Operation-specific adjustments
+    switch (request.type) {
+      case OperationType.READ_FILE:
+        baseLength += 5000; // Typical file size estimate
+        break;
+      case OperationType.WRITE_FILE:
+      case OperationType.EDIT_FILE:
+        baseLength += 10000; // Files plus modification context
+        break;
+      case OperationType.QUESTION:
+        baseLength += 15000; // Questions may need broader context
+        break;
+      case OperationType.VALIDATE:
+      case OperationType.TRANSFORM:
+        baseLength += 20000; // Complex operations need more context
+        break;
+      default:
+        baseLength += 3000;
+    }
+    
+    return Math.min(baseLength, 200000); // Cap at reasonable maximum
+  }
+
+  /**
+   * Estimate operation complexity (1-10 scale)
+   */
+  private estimateOperationComplexity(request: OperationRequest): number {
+    let baseComplexity = 5;
+    
+    // Base complexity by operation type
+    switch (request.type) {
+      case OperationType.READ_FILE:
+      case OperationType.DELETE_FILE:
+      case OperationType.CREATE_DIRECTORY:
+        baseComplexity = 2;
+        break;
+      case OperationType.WRITE_FILE:
+        baseComplexity = 4;
+        break;
+      case OperationType.EDIT_FILE:
+        baseComplexity = 6;
+        break;
+      case OperationType.QUESTION:
+        baseComplexity = 7;
+        break;
+      case OperationType.VALIDATE:
+        baseComplexity = 8;
+        break;
+      case OperationType.TRANSFORM:
+        baseComplexity = 9;
+        break;
+    }
+    
+    // Adjust based on payload complexity
+    if (request.payload) {
+      const payloadStr = JSON.stringify(request.payload);
+      if (payloadStr.length > 10000) {
+        baseComplexity += 2;
+      } else if (payloadStr.length > 5000) {
+        baseComplexity += 1;
+      }
+      
+      // Check for complex patterns in payload
+      if (payloadStr.includes('regex') || payloadStr.includes('pattern')) {
+        baseComplexity += 1;
+      }
+      if (payloadStr.includes('transform') || payloadStr.includes('convert')) {
+        baseComplexity += 1;
+      }
+    }
+    
+    return Math.min(10, Math.max(1, baseComplexity));
+  }
+
+  /**
+   * Setup event handlers for communication and model selection systems
    */
   private setupEventHandlers(): void {
     if (this.config.logging.logCommunications) {
@@ -409,6 +657,32 @@ export class CoreOrchestrator extends EventEmitter {
         this.log('debug', `Question answered by ${to} for ${from} (confidence: ${response.confidence})`);
       });
     }
+
+    // Setup model selector event handlers
+    this.modelSelector.on('modelSelected', (criteria, result) => {
+      this.emit('modelSelected', criteria, result);
+      if (this.config.logging.logModelSelection) {
+        this.log('debug', `Model selected: ${result.selectedModel} for ${criteria.operationType} (confidence: ${result.confidence.toFixed(2)})`);
+      }
+    });
+
+    this.modelSelector.on('modelSelectionFailed', (criteria, error) => {
+      this.emit('modelSelectionFailed', criteria, error);
+      this.log('warn', `Model selection failed for ${criteria.operationType}: ${error}`);
+    });
+
+    this.modelSelector.on('autoModeTriggered', (criteria) => {
+      this.emit('autoModeTriggered', criteria);
+      if (this.config.logging.logModelSelection) {
+        this.log('debug', `Auto mode triggered for ${criteria.operationType}`);
+      }
+    });
+
+    this.modelSelector.on('configurationUpdated', (updates) => {
+      if (this.config.logging.logModelSelection) {
+        this.log('info', `Model selector configuration updated`);
+      }
+    });
   }
 
   /**
