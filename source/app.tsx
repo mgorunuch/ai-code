@@ -1,8 +1,8 @@
 import React, {useState} from 'react';
 import {Box, Text, useInput} from 'ink';
-import {Settings} from '../src/Settings.js';
-import {MainMenu} from '../src/MainMenu.js';
-import {Help} from '../src/Help.js';
+import {Settings} from './Settings';
+import {MainMenu} from './MainMenu';
+import {Help} from './Help';
 
 type Props = {
 	name: string | undefined;

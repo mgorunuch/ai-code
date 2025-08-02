@@ -1,7 +1,7 @@
 // Simple in-memory storage for API keys
 // In a real app, you'd want to persist this to a file or secure storage
 
-import { ApiKeyStorage } from './types.js';
+import { ApiKeyStorage } from './types';
 
 class InMemoryApiKeyStorage implements ApiKeyStorage {
   private apiKeys: Map<string, string> = new Map();

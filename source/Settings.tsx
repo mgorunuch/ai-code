@@ -1,9 +1,9 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text } from 'ink';
-import { ProviderList } from './ProviderList.js';
-import { ApiKeyInput } from './ApiKeyInput.js';
-import { Provider } from './types.js';
-import { apiKeyStorage } from './storage.js';
+import { ProviderList } from './ProviderList';
+import { ApiKeyInput } from './ApiKeyInput';
+import { Provider } from './types';
+import { apiKeyStorage } from './storage';
 
 export interface SettingsProps {
   onExit?: () => void;

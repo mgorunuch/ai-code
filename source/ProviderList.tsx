@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { Provider } from './types.js';
+import { Provider } from './types';
 
 interface ProviderListProps {
   providers: Provider[];
