@@ -1,18 +1,33 @@
-import React, { useState, useEffect } from 'react';
-import { Box, Text, useInput } from 'ink';
-import { CoreOrchestrator } from './core/orchestrator.js';
+import { useState, useEffect } from 'react';
+import { useInput } from 'ink';
+import { CoreOrchestrator } from './core';
+import { MAX_PASSWORD_ATTEMPTS } from './const';
 
 export interface MasterPasswordPromptProps {
 	onAuthenticated: () => void;
 	onExit: () => void;
 }
 
+export interface MasterPasswordPromptState {
+	masterPassword: string;
+	isLoading: boolean;
+	error: string | null;
+	needsPassword: boolean;
+	hasExistingCredentials: boolean;
+	attemptCount: number;
+	isLocked: boolean;
+}
+
+export interface MasterPasswordPromptActions {
+	// No additional actions needed - useInput handles interactions directly
+}
+
 let globalOrchestrator: CoreOrchestrator | null = null;
 
-export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
+export const useMasterPasswordPromptLogic = ({
 	onAuthenticated,
 	onExit
-}) => {
+}: MasterPasswordPromptProps): MasterPasswordPromptState & MasterPasswordPromptActions => {
 	const [masterPassword, setMasterPassword] = useState('');
 	const [isLoading, setIsLoading] = useState(false);
 	const [error, setError] = useState<string | null>(null);
@@ -20,36 +35,6 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
 	const [hasExistingCredentials, setHasExistingCredentials] = useState(false);
 	const [attemptCount, setAttemptCount] = useState(0);
 	const [isLocked, setIsLocked] = useState(false);
-	const MAX_ATTEMPTS = 3;
-
-	useInput((input, key) => {
-		if (!needsPassword || isLocked) return;
-
-		if (key.escape) {
-			onExit();
-			return;
-		}
-
-		if (key.return) {
-			if (masterPassword.trim() && attemptCount < MAX_ATTEMPTS) {
-				initializeCredentials();
-			}
-			return;
-		}
-
-		if (key.backspace || key.delete) {
-			setMasterPassword(masterPassword.slice(0, -1));
-			return;
-		}
-
-		if (input && !key.ctrl && !key.meta) {
-			setMasterPassword(masterPassword + input);
-		}
-	});
-
-	useEffect(() => {
-		checkCredentialSystem();
-	}, []);
 
 	const checkCredentialSystem = async () => {
 		try {
@@ -119,7 +104,7 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
 		if (
 			!globalOrchestrator ||
 			!masterPassword.trim() ||
-			attemptCount >= MAX_ATTEMPTS
+			attemptCount >= MAX_PASSWORD_ATTEMPTS
 		)
 			return;
 
@@ -207,9 +192,9 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
 				errorMsg.includes('verification failed') ||
 				errorMsg.includes('setup failed')
 			) {
-				if (newAttemptCount >= MAX_ATTEMPTS) {
+				if (newAttemptCount >= MAX_PASSWORD_ATTEMPTS) {
 					setError(
-						`❌ Too many failed attempts (${MAX_ATTEMPTS}). Access locked.`
+						`❌ Too many failed attempts (${MAX_PASSWORD_ATTEMPTS}). Access locked.`
 					);
 					setIsLocked(true);
 					// Exit the app immediately when access is locked
@@ -220,13 +205,13 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
 					if (hasExistingCredentials) {
 						setError(
 							`❌ Wrong password. ${
-								MAX_ATTEMPTS - newAttemptCount
+								MAX_PASSWORD_ATTEMPTS - newAttemptCount
 							} attempts remaining.`
 						);
 					} else {
 						setError(
 							`❌ Password setup failed. ${
-								MAX_ATTEMPTS - newAttemptCount
+								MAX_PASSWORD_ATTEMPTS - newAttemptCount
 							} attempts remaining.`
 						);
 					}
@@ -242,100 +227,42 @@ export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = ({
 		}
 	};
 
-	if (isLoading && !needsPassword) {
-		return (
-			<Box flexDirection="column" padding={1}>
-				<Text color="yellow">⏳ Checking credential system...</Text>
-			</Box>
-		);
-	}
+	useInput((input, key) => {
+		if (!needsPassword || isLocked) return;
 
-	if (!needsPassword) {
-		return null;
-	}
+		if (key.escape) {
+			onExit();
+			return;
+		}
 
-	return (
-		<Box flexDirection="column" padding={1}>
-			<Box marginBottom={1}>
-				<Text bold color="cyan">
-					🔐 Secure Credential Storage
-				</Text>
-			</Box>
+		if (key.return) {
+			if (masterPassword.trim() && attemptCount < MAX_PASSWORD_ATTEMPTS) {
+				initializeCredentials();
+			}
+			return;
+		}
 
-			{error && (
-				<Box marginBottom={1}>
-					<Text color="red">{error}</Text>
-				</Box>
-			)}
+		if (key.backspace || key.delete) {
+			setMasterPassword(masterPassword.slice(0, -1));
+			return;
+		}
 
-			<Box marginBottom={1} flexDirection="column">
-				{hasExistingCredentials ? (
-					<>
-						<Text color="gray">
-							Enter your master password to unlock existing encrypted
-							credentials.
-						</Text>
-						<Text color="yellow">
-							You have stored API keys that need to be decrypted.
-						</Text>
-					</>
-				) : (
-					<>
-						<Text color="gray">Set up encrypted API key storage.</Text>
-						<Text color="gray">
-							Create a master password to secure your API keys between sessions.
-						</Text>
-					</>
-				)}
-			</Box>
+		if (input && !key.ctrl && !key.meta) {
+			setMasterPassword(masterPassword + input);
+		}
+	});
 
-			<Box marginBottom={1}>
-				<Text>Master Password: </Text>
-				<Text color="yellow">
-					{masterPassword.replace(/./g, '•') || '(empty)'}
-				</Text>
-			</Box>
+	useEffect(() => {
+		checkCredentialSystem();
+	}, []);
 
-			{attemptCount > 0 && !isLocked && (
-				<Box marginBottom={1}>
-					<Text color="orange">
-						Attempts remaining: {MAX_ATTEMPTS - attemptCount}
-					</Text>
-				</Box>
-			)}
-
-			{isLocked ? (
-				<Box marginBottom={1} flexDirection="column">
-					<Text color="red">
-						🔒 Access locked due to too many failed attempts
-					</Text>
-					<Text dimColor>Press Escape to exit the application</Text>
-				</Box>
-			) : (
-				<Box marginBottom={1} flexDirection="column">
-					{hasExistingCredentials ? (
-						<>
-							<Text dimColor>
-								Enter the correct master password and press Enter
-							</Text>
-							<Text dimColor>
-								Press Escape to exit (credentials required for app usage)
-							</Text>
-						</>
-					) : (
-						<>
-							<Text dimColor>Create a master password and press Enter</Text>
-							<Text dimColor>Press Escape to exit the application</Text>
-						</>
-					)}
-				</Box>
-			)}
-
-			{isLoading && (
-				<Box marginTop={1}>
-					<Text color="yellow">⏳ Authenticating...</Text>
-				</Box>
-			)}
-		</Box>
-	);
+	return {
+		masterPassword,
+		isLoading,
+		error,
+		needsPassword,
+		hasExistingCredentials,
+		attemptCount,
+		isLocked
+	};
 };

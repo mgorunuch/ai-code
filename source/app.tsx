@@ -4,7 +4,7 @@ import { Settings } from './Settings';
 import { MainMenu } from './MainMenu';
 import { Help } from './Help';
 import { AgentDashboard, AgentCommunicationWidget } from './AgentDashboard';
-import { MasterPasswordPrompt } from './MasterPasswordPrompt';
+import { MasterPasswordPrompt } from './master-password-prompt.ui';
 
 type Props = {
 	name: string | undefined;
