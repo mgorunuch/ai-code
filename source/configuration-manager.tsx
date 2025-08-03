@@ -13,11 +13,11 @@ import type {
 	UserConfig,
 	ConfigValidationResult
 } from './core/configuration-types.js';
-import { AgentConfigEditor } from './AgentConfigEditor';
-import { CredentialManager } from './CredentialManager';
-import { ConfigurationValidator } from './ConfigurationValidator';
-import { ConfigurationImportExport } from './ConfigurationImportExport';
-import { ConfigurationPreview } from './ConfigurationPreview';
+import { AgentConfigEditor } from './agent-config-editor';
+import { CredentialManager } from './credential-manager';
+import { ConfigurationValidator } from './configuration-validator';
+import { ConfigurationImportExport } from './configuration-import-export';
+import { ConfigurationPreview } from './configuration-preview';
 
 export interface ConfigurationManagerProps {
 	onExit?: () => void;

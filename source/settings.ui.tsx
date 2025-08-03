@@ -1,7 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { ProviderList } from './ProviderList';
-import { ApiKeyInput } from './ApiKeyInput';
+import { ProviderList } from './provider-list.ui';
+import { ApiKeyInput } from './api-key-input.ui';
 import { useSettingsLogic, SettingsProps } from './settings.logic';
 
 export const Settings: React.FC<SettingsProps> = (props) => {

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { useAgentCommunication } from './AgentCommunicationProvider.js';
+import { useAgentCommunication } from './agent-communication-provider.js';
 import type { AgentCapability, AgentId } from './core/types.js';
 
 interface AgentStatusDisplayProps {

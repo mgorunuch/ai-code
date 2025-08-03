@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput } from 'ink';
-import { useAgentCommunication } from './AgentCommunicationProvider.js';
+import { useAgentCommunication } from './agent-communication-provider.js';
 import type {
 	OperationRequest,
 	OperationResponse,

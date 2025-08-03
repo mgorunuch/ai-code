@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import { Provider } from './types';
 import { apiKeyStorage } from './storage';
-import { useOrchestrator } from './OrchestratorProvider';
+import { useOrchestrator } from './orchestrator-provider';
 
 export interface SettingsProps {
 	onExit?: () => void;

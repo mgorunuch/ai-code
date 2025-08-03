@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { Settings } from './Settings';
+import { Settings } from './settings.ui';
 import { useSettingsPageLogic, SettingsPageProps } from './settings-page.logic';
 
 export const SettingsPage: React.FC<SettingsPageProps> = (props) => {

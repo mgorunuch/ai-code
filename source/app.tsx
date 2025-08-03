@@ -3,10 +3,10 @@ import { Box, Text, useInput, useApp } from 'ink';
 import { MainMenu } from './main-menu.ui';
 import { SettingsPage } from './settings-page.ui';
 import { MainAppPage } from './main-app-page.ui';
-import { Help } from './Help';
-import { AgentDashboard } from './AgentDashboard';
+import { Help } from './help.ui';
+import { AgentDashboard } from './agent-dashboard.ui';
 import { MasterPasswordPrompt } from './master-password-prompt.ui';
-import { OrchestratorProvider } from './OrchestratorProvider';
+import { OrchestratorProvider } from './orchestrator-provider';
 
 type Props = {
 	name: string | undefined;

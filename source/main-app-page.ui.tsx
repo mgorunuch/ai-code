@@ -1,6 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { AgentCommunicationWidget } from './AgentDashboard';
+import { AgentCommunicationWidget } from './agent-dashboard.ui';
 import { useMainAppPageLogic, MainAppPageProps } from './main-app-page.logic';
 
 export const MainAppPage: React.FC<MainAppPageProps> = (props) => {

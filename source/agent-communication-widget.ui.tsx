@@ -1,8 +1,8 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { AgentStatusDisplay } from './AgentStatusDisplay.js';
-import { MessageQueue } from './MessageQueue.js';
-import { OperationMonitor } from './OperationMonitor.js';
+import { AgentStatusDisplay } from './agent-status-display.js';
+import { MessageQueue } from './message-queue.js';
+import { OperationMonitor } from './operation-monitor.js';
 import type { WidgetTab } from './agent-communication-widget.logic.js';
 
 export interface AgentCommunicationWidgetUIProps {

@@ -1,14 +1,23 @@
 import React from 'react';
 import { Box, Text } from 'ink';
-import { AgentStatusDisplay, AgentSummary } from './AgentStatusDisplay.js';
-import { MessageQueue, QuestionQueue } from './MessageQueue.js';
-import { OperationMonitor, OperationStats } from './OperationMonitor.js';
-import { QuickActions } from './AgentInteractionPanel.js';
+import { AgentStatusDisplay, AgentSummary } from './agent-status-display.js';
+import { MessageQueue, QuestionQueue } from './message-queue.js';
+import { OperationMonitor, OperationStats } from './operation-monitor.js';
+import { QuickActions } from './agent-interaction-panel.js';
 import {
 	ModelSelectionDisplay,
 	ModelConfigDisplay
-} from './ModelSelectionDisplay.js';
+} from './model-selection-display.js';
 import type { DashboardView } from './agent-dashboard.logic.js';
+import { AgentCommunicationProvider } from './agent-communication-provider.js';
+import { AgentInteractionPanel } from './agent-interaction-panel.js';
+import { ConfigurationManagerInk } from './configuration-manager-ink';
+import {
+	useAgentDashboardLogic,
+	type UseAgentDashboardLogicProps
+} from './agent-dashboard.logic.js';
+import { useAgentCommunicationWidgetLogic } from './agent-communication-widget.logic.js';
+import { AgentCommunicationWidgetUI } from './agent-communication-widget.ui.js';
 
 export interface DashboardHeaderProps {
 	currentView: DashboardView;
@@ -183,3 +192,59 @@ export const DashboardFooter: React.FC = () => (
 		</Box>
 	</Box>
 );
+
+interface AgentDashboardProps extends UseAgentDashboardLogicProps {}
+
+export const AgentDashboard: React.FC<AgentDashboardProps> = (props) => {
+	const { state, actions } = useAgentDashboardLogic(props);
+
+	if (state.showConfigurationManager) {
+		return (
+			<ConfigurationManagerInk
+				onExit={() => actions.setShowConfigurationManager(false)}
+				baseDir={process.cwd()}
+				autoSave={false}
+			/>
+		);
+	}
+
+	if (state.showInteractionPanel) {
+		return (
+			<AgentCommunicationProvider autoInit>
+				<AgentInteractionPanel onClose={() => actions.setShowInteractionPanel(false)} />
+			</AgentCommunicationProvider>
+		);
+	}
+
+	return (
+		<AgentCommunicationProvider autoInit>
+			<Box flexDirection="column" height={process.stdout.rows || 40}>
+				<DashboardHeader currentView={state.currentView} />
+				<DashboardContent currentView={state.currentView} />
+				<DashboardFooter />
+			</Box>
+		</AgentCommunicationProvider>
+	);
+};
+
+// Standalone component for embedding in existing apps
+interface AgentCommunicationWidgetProps {
+	compact?: boolean;
+	height?: number;
+}
+
+export const AgentCommunicationWidget: React.FC<
+	AgentCommunicationWidgetProps
+> = ({ compact = true, height = 20 }) => {
+	const { state } = useAgentCommunicationWidgetLogic();
+
+	return (
+		<AgentCommunicationProvider autoInit>
+			<AgentCommunicationWidgetUI
+				activeTab={state.activeTab}
+				height={height}
+				compact={compact}
+			/>
+		</AgentCommunicationProvider>
+	);
+};
