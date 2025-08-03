@@ -4,18 +4,14 @@ import { ProviderList } from './ProviderList';
 import { ApiKeyInput } from './ApiKeyInput';
 import { Provider } from './types';
 import { apiKeyStorage } from './storage';
-import { CoreOrchestrator } from './core/orchestrator.js';
-import type { CompleteConfig } from './core/configuration-types.js';
+import { useOrchestrator } from './OrchestratorProvider';
 
 export interface SettingsProps {
 	onExit?: () => void;
 }
 
-// Global orchestrator instance for credential management
-let globalOrchestrator: CoreOrchestrator | null = null;
-let isOrchestratorInitialized = false;
-
 export const Settings: React.FC<SettingsProps> = ({ onExit }) => {
+	const orchestratorContext = useOrchestrator();
 	const [providers, setProviders] = useState<Provider[]>([
 		{ id: 'openai', name: 'OpenAI' },
 		{ id: 'anthropic', name: 'Anthropic' }
@@ -42,27 +38,8 @@ export const Settings: React.FC<SettingsProps> = ({ onExit }) => {
 			setIsLoading(true);
 			setOrchestratorError(null);
 
-			if (!globalOrchestrator) {
-				// Create orchestrator with minimal config for settings use
-				globalOrchestrator = new CoreOrchestrator({
-					agents: [],
-					defaultPermissions: { requireExplicitToolGrants: false },
-					logging: { level: 'warn', logCommunications: false }
-				});
-
-				// Try to initialize from config files if they exist
-				try {
-					await globalOrchestrator.initializeFromConfigFiles({
-						validateOnLoad: false,
-						enableHotReload: false
-					});
-					isOrchestratorInitialized = true;
-
-					// Credentials should already be initialized at startup
-				} catch (configError) {
-					// Config files don't exist or failed to load, continue with legacy storage
-					console.warn('Config files not available, using legacy storage');
-				}
+			if (!orchestratorContext.isInitialized) {
+				await orchestratorContext.initializeOrchestrator();
 			}
 
 			await loadProvidersFromBothSystems();
@@ -83,9 +60,9 @@ export const Settings: React.FC<SettingsProps> = ({ onExit }) => {
 				let isFromSecureStorage = false;
 
 				// Try to get from core system first
-				if (globalOrchestrator && isOrchestratorInitialized) {
+				if (orchestratorContext.orchestrator && orchestratorContext.isCredentialsInitialized) {
 					try {
-						apiKey = await globalOrchestrator.getCredential(provider.id);
+						apiKey = await orchestratorContext.getCredential(provider.id);
 						isFromSecureStorage = true;
 					} catch (error) {
 						if ((error as Error).message.includes('No credential found')) {
@@ -134,9 +111,9 @@ export const Settings: React.FC<SettingsProps> = ({ onExit }) => {
 			setMessage(null);
 
 			// Try to save to core system first
-			if (globalOrchestrator && isOrchestratorInitialized) {
+			if (orchestratorContext.orchestrator && orchestratorContext.isCredentialsInitialized) {
 				try {
-					await globalOrchestrator.storeCredential(selectedProvider.id, apiKey);
+					await orchestratorContext.storeCredential(selectedProvider.id, apiKey);
 					setMessage({
 						text: `API key securely saved for ${selectedProvider.name}! (Encrypted storage)`,
 						color: 'green'

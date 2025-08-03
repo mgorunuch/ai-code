@@ -5,6 +5,7 @@ import { MainMenu } from './MainMenu';
 import { Help } from './Help';
 import { AgentDashboard, AgentCommunicationWidget } from './AgentDashboard';
 import { MasterPasswordPrompt } from './master-password-prompt.ui';
+import { OrchestratorProvider } from './OrchestratorProvider';
 
 type Props = {
 	name: string | undefined;
@@ -20,6 +21,14 @@ enum AppState {
 }
 
 export default function App({ name = 'Stranger' }: Props) {
+	return (
+		<OrchestratorProvider>
+			<AppContent name={name} />
+		</OrchestratorProvider>
+	);
+}
+
+function AppContent({ name = 'Stranger' }: Props) {
 	const [appState, setAppState] = useState<AppState>(AppState.Auth);
 	const [isAuthenticated, setIsAuthenticated] = useState(false);
 	const [shouldExit, setShouldExit] = useState(false);

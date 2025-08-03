@@ -15,6 +15,7 @@ import type {
   CustomProviderConfig,
   ConfigPaths
 } from './configuration-types.js';
+import { BadDecryptError, DataAuthenticationError, InvalidPasswordError } from './errors.js';
 
 const scryptAsync = promisify(scrypt);
 
@@ -414,10 +415,12 @@ export class CredentialManager extends EventEmitter {
       return decrypted;
     } catch (error) {
       // Check if this is a decryption/authentication error (wrong password)
-      if ((error as Error).message.includes('Unsupported state or unable to authenticate data') ||
-          (error as Error).message.includes('Invalid authentication tag') ||
-          (error as Error).message.includes('bad decrypt')) {
-        throw new Error('Invalid master password or corrupted credential data');
+      const errorMessage = (error as Error).message;
+      if (errorMessage.includes('Unsupported state or unable to authenticate data') ||
+          errorMessage.includes('Invalid authentication tag')) {
+        throw new DataAuthenticationError('Unable to authenticate data - invalid master password or corrupted data');
+      } else if (errorMessage.includes('bad decrypt')) {
+        throw new BadDecryptError('Failed to decrypt credential - invalid master password');
       }
       
       // Re-throw other errors as-is
