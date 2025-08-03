@@ -8,7 +8,7 @@ import { CoreOrchestrator } from './core/orchestrator.js';
 import type { CompleteConfig } from './core/configuration-types.js';
 
 export interface SettingsProps {
-  onExit?: () => void;
+	onExit?: () => void;
 }
 
 // Global orchestrator instance for credential management
@@ -16,229 +16,239 @@ let globalOrchestrator: CoreOrchestrator | null = null;
 let isOrchestratorInitialized = false;
 
 export const Settings: React.FC<SettingsProps> = ({ onExit }) => {
-  const [providers, setProviders] = useState<Provider[]>([
-    { id: 'openai', name: 'OpenAI' },
-    { id: 'anthropic', name: 'Anthropic' }
-  ]);
-  const [selectedProvider, setSelectedProvider] = useState<Provider | null>(null);
-  const [message, setMessage] = useState<{ text: string; color: string } | null>(null);
-  const [isLoading, setIsLoading] = useState(false);
-  const [orchestratorError, setOrchestratorError] = useState<string | null>(null);
+	const [providers, setProviders] = useState<Provider[]>([
+		{ id: 'openai', name: 'OpenAI' },
+		{ id: 'anthropic', name: 'Anthropic' }
+	]);
+	const [selectedProvider, setSelectedProvider] = useState<Provider | null>(
+		null
+	);
+	const [message, setMessage] = useState<{
+		text: string;
+		color: string;
+	} | null>(null);
+	const [isLoading, setIsLoading] = useState(false);
+	const [orchestratorError, setOrchestratorError] = useState<string | null>(
+		null
+	);
 
+	// Initialize orchestrator and load existing API keys
+	useEffect(() => {
+		initializeOrchestratorAndLoadKeys();
+	}, []);
 
-  // Initialize orchestrator and load existing API keys
-  useEffect(() => {
-    initializeOrchestratorAndLoadKeys();
-  }, []);
+	const initializeOrchestratorAndLoadKeys = async () => {
+		try {
+			setIsLoading(true);
+			setOrchestratorError(null);
 
-  const initializeOrchestratorAndLoadKeys = async () => {
-    try {
-      setIsLoading(true);
-      setOrchestratorError(null);
+			if (!globalOrchestrator) {
+				// Create orchestrator with minimal config for settings use
+				globalOrchestrator = new CoreOrchestrator({
+					agents: [],
+					defaultPermissions: { requireExplicitToolGrants: false },
+					logging: { level: 'warn', logCommunications: false }
+				});
 
-      if (!globalOrchestrator) {
-        // Create orchestrator with minimal config for settings use
-        globalOrchestrator = new CoreOrchestrator({
-          agents: [],
-          defaultPermissions: { requireExplicitToolGrants: false },
-          logging: { level: 'warn', logCommunications: false }
-        });
+				// Try to initialize from config files if they exist
+				try {
+					await globalOrchestrator.initializeFromConfigFiles({
+						validateOnLoad: false,
+						enableHotReload: false
+					});
+					isOrchestratorInitialized = true;
 
-        // Try to initialize from config files if they exist
-        try {
-          await globalOrchestrator.initializeFromConfigFiles({ 
-            validateOnLoad: false,
-            enableHotReload: false 
-          });
-          isOrchestratorInitialized = true;
-          
-          // Credentials should already be initialized at startup
-        } catch (configError) {
-          // Config files don't exist or failed to load, continue with legacy storage
-          console.warn('Config files not available, using legacy storage');
-        }
-      }
+					// Credentials should already be initialized at startup
+				} catch (configError) {
+					// Config files don't exist or failed to load, continue with legacy storage
+					console.warn('Config files not available, using legacy storage');
+				}
+			}
 
-      await loadProvidersFromBothSystems();
-    } catch (error) {
-      console.error('Failed to initialize orchestrator:', error);
-      setOrchestratorError((error as Error).message);
-      // Fall back to legacy storage
-      await loadProvidersFromLegacyStorage();
-    } finally {
-      setIsLoading(false);
-    }
-  };
+			await loadProvidersFromBothSystems();
+		} catch (error) {
+			console.error('Failed to initialize orchestrator:', error);
+			setOrchestratorError((error as Error).message);
+			// Fall back to legacy storage
+			await loadProvidersFromLegacyStorage();
+		} finally {
+			setIsLoading(false);
+		}
+	};
 
-  const loadProvidersFromBothSystems = async () => {
-    const updatedProviders = await Promise.all(
-      providers.map(async (provider) => {
-        let apiKey: string | undefined;
-        let isFromSecureStorage = false;
-        
-        // Try to get from core system first
-        if (globalOrchestrator && isOrchestratorInitialized) {
-          try {
-            apiKey = await globalOrchestrator.getCredential(provider.id);
-            isFromSecureStorage = true;
-          } catch (error) {
-            if ((error as Error).message.includes('No credential found')) {
-              // This is normal - provider just doesn't have a credential yet
-              // Fall back to legacy storage
-              apiKey = apiKeyStorage.getApiKey(provider.id);
-            } else {
-              // Fall back to legacy storage for other errors
-              apiKey = apiKeyStorage.getApiKey(provider.id);
-            }
-          }
-        } else {
-          // Use legacy storage
-          apiKey = apiKeyStorage.getApiKey(provider.id);
-        }
+	const loadProvidersFromBothSystems = async () => {
+		const updatedProviders = await Promise.all(
+			providers.map(async (provider) => {
+				let apiKey: string | undefined;
+				let isFromSecureStorage = false;
 
-        return {
-          ...provider,
-          apiKey: apiKey ? '••••••••••••' + apiKey.slice(-4) : undefined,
-          isSecure: isFromSecureStorage
-        };
-      })
-    );
-    
-    setProviders(updatedProviders);
-  };
+				// Try to get from core system first
+				if (globalOrchestrator && isOrchestratorInitialized) {
+					try {
+						apiKey = await globalOrchestrator.getCredential(provider.id);
+						isFromSecureStorage = true;
+					} catch (error) {
+						if ((error as Error).message.includes('No credential found')) {
+							// This is normal - provider just doesn't have a credential yet
+							// Fall back to legacy storage
+							apiKey = apiKeyStorage.getApiKey(provider.id);
+						} else {
+							// Fall back to legacy storage for other errors
+							apiKey = apiKeyStorage.getApiKey(provider.id);
+						}
+					}
+				} else {
+					// Use legacy storage
+					apiKey = apiKeyStorage.getApiKey(provider.id);
+				}
 
-  const loadProvidersFromLegacyStorage = async () => {
-    const updatedProviders = providers.map(provider => ({
-      ...provider,
-      apiKey: apiKeyStorage.getApiKey(provider.id)
-    }));
-    setProviders(updatedProviders);
-  };
+				return {
+					...provider,
+					apiKey: apiKey ? '••••••••••••' + apiKey.slice(-4) : undefined,
+					isSecure: isFromSecureStorage
+				};
+			})
+		);
 
+		setProviders(updatedProviders);
+	};
 
-  const handleSelectProvider = (provider: Provider) => {
-    setSelectedProvider(provider);
-    setMessage(null);
-  };
+	const loadProvidersFromLegacyStorage = async () => {
+		const updatedProviders = providers.map((provider) => ({
+			...provider,
+			apiKey: apiKeyStorage.getApiKey(provider.id)
+		}));
+		setProviders(updatedProviders);
+	};
 
-  const handleSaveApiKey = async (apiKey: string) => {
-    if (!selectedProvider) return;
+	const handleSelectProvider = (provider: Provider) => {
+		setSelectedProvider(provider);
+		setMessage(null);
+	};
 
-    try {
-      setIsLoading(true);
-      setMessage(null);
+	const handleSaveApiKey = async (apiKey: string) => {
+		if (!selectedProvider) return;
 
-      // Try to save to core system first
-      if (globalOrchestrator && isOrchestratorInitialized) {
-        try {
-          await globalOrchestrator.storeCredential(selectedProvider.id, apiKey);
-          setMessage({
-            text: `API key securely saved for ${selectedProvider.name}! (Encrypted storage)`,
-            color: 'green'
-          });
-        } catch (error) {
-          console.warn('Core storage failed, falling back to legacy:', error);
-          // Fall back to legacy storage
-          apiKeyStorage.setApiKey(selectedProvider.id, apiKey);
-          setMessage({
-            text: `API key saved for ${selectedProvider.name}! (Session storage - will not persist after restart)`,
-            color: 'yellow'
-          });
-        }
-      } else {
-        // Use legacy storage
-        apiKeyStorage.setApiKey(selectedProvider.id, apiKey);
-        setMessage({
-          text: `API key saved for ${selectedProvider.name}! (Session storage - will not persist after restart)`,
-          color: 'yellow'
-        });
-      }
+		try {
+			setIsLoading(true);
+			setMessage(null);
 
-      // Refresh the provider list
-      await loadProvidersFromBothSystems();
-      setSelectedProvider(null);
-    } catch (error) {
-      setMessage({
-        text: `Failed to save API key: ${(error as Error).message}`,
-        color: 'red'
-      });
-    } finally {
-      setIsLoading(false);
-    }
-  };
+			// Try to save to core system first
+			if (globalOrchestrator && isOrchestratorInitialized) {
+				try {
+					await globalOrchestrator.storeCredential(selectedProvider.id, apiKey);
+					setMessage({
+						text: `API key securely saved for ${selectedProvider.name}! (Encrypted storage)`,
+						color: 'green'
+					});
+				} catch (error) {
+					console.warn('Core storage failed, falling back to legacy:', error);
+					// Fall back to legacy storage
+					apiKeyStorage.setApiKey(selectedProvider.id, apiKey);
+					setMessage({
+						text: `API key saved for ${selectedProvider.name}! (Session storage - will not persist after restart)`,
+						color: 'yellow'
+					});
+				}
+			} else {
+				// Use legacy storage
+				apiKeyStorage.setApiKey(selectedProvider.id, apiKey);
+				setMessage({
+					text: `API key saved for ${selectedProvider.name}! (Session storage - will not persist after restart)`,
+					color: 'yellow'
+				});
+			}
 
-  const handleCancel = () => {
-    setMessage({
-      text: 'Cancelled without saving',
-      color: 'yellow'
-    });
-    setSelectedProvider(null);
-  };
+			// Refresh the provider list
+			await loadProvidersFromBothSystems();
+			setSelectedProvider(null);
+		} catch (error) {
+			setMessage({
+				text: `Failed to save API key: ${(error as Error).message}`,
+				color: 'red'
+			});
+		} finally {
+			setIsLoading(false);
+		}
+	};
 
-  const handleExit = () => {
-    if (selectedProvider) {
-      setSelectedProvider(null);
-    } else if (onExit) {
-      onExit();
-    }
-  };
+	const handleCancel = () => {
+		setMessage({
+			text: 'Cancelled without saving',
+			color: 'yellow'
+		});
+		setSelectedProvider(null);
+	};
 
-  return (
-    <Box flexDirection="column" padding={1}>
-      {/* Loading indicator */}
-      {isLoading && (
-        <Box marginBottom={1}>
-          <Text color="yellow">⏳ Loading...</Text>
-        </Box>
-      )}
+	const handleExit = () => {
+		if (selectedProvider) {
+			setSelectedProvider(null);
+		} else if (onExit) {
+			onExit();
+		}
+	};
 
-      {/* Orchestrator Error */}
-      {orchestratorError && (
-        <Box marginBottom={1} flexDirection="column">
-          <Text color="red">⚠️  Core system error: {orchestratorError}</Text>
-          <Text color="gray">Falling back to session storage (non-persistent)</Text>
-        </Box>
-      )}
+	return (
+		<Box flexDirection="column" padding={1}>
+			{/* Loading indicator */}
+			{isLoading && (
+				<Box marginBottom={1}>
+					<Text color="yellow">⏳ Loading...</Text>
+				</Box>
+			)}
 
-      {!selectedProvider ? (
-        <>
-          <Box marginBottom={1} flexDirection="column">
-            <Text color="green">✓ Secure credential storage available</Text>
-            <Text color="gray">API keys will be encrypted and persistent</Text>
-          </Box>
-          
-          <ProviderList
-            providers={providers}
-            onSelectProvider={handleSelectProvider}
-            onExit={handleExit}
-          />
-          
-          {/* Show storage status for each provider */}
-          {providers.some(p => p.apiKey) && (
-            <Box marginTop={1} marginBottom={1}>
-              <Text dimColor>Storage status:</Text>
-              {providers.filter(p => p.apiKey).map(provider => (
-                <Text key={provider.id} dimColor>
-                  {provider.name}: {provider.isSecure ? '🔒 Encrypted' : '⚠️  Session only'}
-                </Text>
-              ))}
-            </Box>
-          )}
-          
-          {message && (
-            <Box marginTop={1}>
-              <Text color={message.color}>{message.text}</Text>
-            </Box>
-          )}
-        </>
-      ) : (
-        <ApiKeyInput
-          provider={selectedProvider!}
-          currentApiKey={selectedProvider?.apiKey}
-          onSave={handleSaveApiKey}
-          onCancel={handleCancel}
-        />
-      )}
-    </Box>
-  );
+			{/* Orchestrator Error */}
+			{orchestratorError && (
+				<Box marginBottom={1} flexDirection="column">
+					<Text color="red">⚠️ Core system error: {orchestratorError}</Text>
+					<Text color="gray">
+						Falling back to session storage (non-persistent)
+					</Text>
+				</Box>
+			)}
+
+			{!selectedProvider ? (
+				<>
+					<Box marginBottom={1} flexDirection="column">
+						<Text color="green">✓ Secure credential storage available</Text>
+						<Text color="gray">API keys will be encrypted and persistent</Text>
+					</Box>
+
+					<ProviderList
+						providers={providers}
+						onSelectProvider={handleSelectProvider}
+						onExit={handleExit}
+					/>
+
+					{/* Show storage status for each provider */}
+					{providers.some((p) => p.apiKey) && (
+						<Box marginTop={1} marginBottom={1}>
+							<Text dimColor>Storage status:</Text>
+							{providers
+								.filter((p) => p.apiKey)
+								.map((provider) => (
+									<Text key={provider.id} dimColor>
+										{provider.name}:{' '}
+										{provider.isSecure ? '🔒 Encrypted' : '⚠️  Session only'}
+									</Text>
+								))}
+						</Box>
+					)}
+
+					{message && (
+						<Box marginTop={1}>
+							<Text color={message.color}>{message.text}</Text>
+						</Box>
+					)}
+				</>
+			) : (
+				<ApiKeyInput
+					provider={selectedProvider!}
+					currentApiKey={selectedProvider?.apiKey}
+					onSave={handleSaveApiKey}
+					onCancel={handleCancel}
+				/>
+			)}
+		</Box>
+	);
 };

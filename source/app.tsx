@@ -1,10 +1,10 @@
-import React, {useState, useEffect} from 'react';
-import {Box, Text, useInput, useApp} from 'ink';
-import {Settings} from './Settings';
-import {MainMenu} from './MainMenu';
-import {Help} from './Help';
-import {AgentDashboard, AgentCommunicationWidget} from './AgentDashboard';
-import {MasterPasswordPrompt} from './MasterPasswordPrompt';
+import React, { useState, useEffect } from 'react';
+import { Box, Text, useInput, useApp } from 'ink';
+import { Settings } from './Settings';
+import { MainMenu } from './MainMenu';
+import { Help } from './Help';
+import { AgentDashboard, AgentCommunicationWidget } from './AgentDashboard';
+import { MasterPasswordPrompt } from './MasterPasswordPrompt';
 
 type Props = {
 	name: string | undefined;
@@ -19,15 +19,19 @@ enum AppState {
 	Agents = 'agents'
 }
 
-export default function App({name = 'Stranger'}: Props) {
+export default function App({ name = 'Stranger' }: Props) {
 	const [appState, setAppState] = useState<AppState>(AppState.Auth);
 	const [isAuthenticated, setIsAuthenticated] = useState(false);
 	const [shouldExit, setShouldExit] = useState(false);
-	const {exit} = useApp();
+	const { exit } = useApp();
 
 	useInput((input, key) => {
 		// Global escape to return to menu from any state (except auth, which handles its own exit)
-		if (key.escape && appState !== AppState.Menu && appState !== AppState.Auth) {
+		if (
+			key.escape &&
+			appState !== AppState.Menu &&
+			appState !== AppState.Auth
+		) {
 			setAppState(AppState.Menu);
 		}
 
@@ -59,7 +63,6 @@ export default function App({name = 'Stranger'}: Props) {
 	const handleOpenAgents = () => setAppState(AppState.Agents);
 	const handleBackToMenu = () => setAppState(AppState.Menu);
 
-
 	// Always show authentication prompt if not authenticated
 	if (!isAuthenticated) {
 		return (
@@ -86,7 +89,9 @@ export default function App({name = 'Stranger'}: Props) {
 		case AppState.Settings:
 			return (
 				<Box flexDirection="column">
-					<Text bold color="cyan">Settings Menu</Text>
+					<Text bold color="cyan">
+						Settings Menu
+					</Text>
 					<Text dimColor>Press ESC to return to main menu</Text>
 					<Box marginTop={1}>
 						<Settings onExit={handleBackToMenu} />
