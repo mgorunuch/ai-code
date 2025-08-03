@@ -29,15 +29,6 @@ export const EnterPasswordScreen: React.FC<EnterPasswordScreenProps> = ({
 				</Box>
 			)}
 
-			<Box marginBottom={1} flexDirection="column">
-				<Text color="blue">
-					Enter your master password to access stored credentials.
-				</Text>
-				<Text color="yellow">
-					🔑 Your encrypted API keys are waiting to be unlocked.
-				</Text>
-			</Box>
-
 			<Box marginBottom={1}>
 				<Text>Master Password: </Text>
 				<Text color="blue">

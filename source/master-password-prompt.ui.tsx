@@ -5,8 +5,6 @@ import { NewPasswordScreen } from './master-password-new.ui';
 import { EnterPasswordScreen } from './master-password-enter.ui';
 import { LockedScreen } from './master-password-locked.ui';
 
-export { MasterPasswordPromptProps } from './master-password-prompt.logic';
-
 export const MasterPasswordPrompt: React.FC<MasterPasswordPromptProps> = (props) => {
 	const {
 		masterPassword,

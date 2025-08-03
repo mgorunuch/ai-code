@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useInput } from 'ink';
 import { useOrchestrator } from './OrchestratorProvider';
 import { MAX_PASSWORD_ATTEMPTS } from './const';
-import { isPasswordError, getMessageFromError } from './core/errors.js';
+import { isPasswordError, getMessageFromError } from './core/errors';
 
 export interface MasterPasswordPromptProps {
 	onAuthenticated: () => void;
