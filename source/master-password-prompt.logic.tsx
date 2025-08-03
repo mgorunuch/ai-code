@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { useInput } from 'ink';
 import { useOrchestrator } from './OrchestratorProvider';
 import { MAX_PASSWORD_ATTEMPTS } from './const';
-import { isPasswordError } from './core/errors.js';
+import { isPasswordError, getMessageFromError } from './core/errors.js';
 
 export interface MasterPasswordPromptProps {
 	onAuthenticated: () => void;
@@ -53,7 +53,7 @@ export const useMasterPasswordPromptLogic = ({
 			setHasExistingCredentials(result.hasExistingCredentials);
 		} catch (error) {
 			console.error('Failed to check credential system:', error);
-			setError((error as Error).message);
+			setError(getMessageFromError(error));
 			setNeedsPassword(true);
 		} finally {
 			setIsLoading(false);
@@ -82,7 +82,7 @@ export const useMasterPasswordPromptLogic = ({
 
 			// Use type-safe error checking
 			if (!isPasswordError(error)) {
-				setError(texts.authenticationFailed(error?.message));
+				setError(texts.authenticationFailed(getMessageFromError(error)));
 				setMasterPassword('');
 				return;
 			}
