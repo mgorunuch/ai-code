@@ -8,8 +8,6 @@ import {MasterPasswordPrompt} from './MasterPasswordPrompt';
 
 type Props = {
 	name: string | undefined;
-	settings?: boolean;
-	agents?: boolean;
 };
 
 enum AppState {
@@ -21,7 +19,7 @@ enum AppState {
 	Agents = 'agents'
 }
 
-export default function App({name = 'Stranger', settings = false, agents = false}: Props) {
+export default function App({name = 'Stranger'}: Props) {
 	const [appState, setAppState] = useState<AppState>(AppState.Auth);
 	const [isAuthenticated, setIsAuthenticated] = useState(false);
 	const [shouldExit, setShouldExit] = useState(false);
@@ -32,6 +30,7 @@ export default function App({name = 'Stranger', settings = false, agents = false
 		if (key.escape && appState !== AppState.Menu && appState !== AppState.Auth) {
 			setAppState(AppState.Menu);
 		}
+
 		// Quick settings access from main app
 		if (appState === AppState.App && input === 's') {
 			setAppState(AppState.Settings);
@@ -40,13 +39,7 @@ export default function App({name = 'Stranger', settings = false, agents = false
 
 	const handleAuthenticated = () => {
 		setIsAuthenticated(true);
-		if (settings) {
-			setAppState(AppState.Settings);
-		} else if (agents) {
-			setAppState(AppState.Agents);
-		} else {
-			setAppState(AppState.Menu);
-		}
+		setAppState(AppState.Menu);
 	};
 
 	const handleExitApp = () => {

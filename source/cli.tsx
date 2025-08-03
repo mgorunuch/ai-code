@@ -12,14 +12,8 @@ const cli = meow(
 			name: {
 				type: 'string',
 			},
-			settings: {
-				type: 'boolean',
-			},
-			agents: {
-				type: 'boolean',
-			},
 		},
 	},
 );
 
-render(<App name={cli.flags.name} settings={cli.flags.settings} agents={cli.flags.agents} />);
+render(<App name={cli.flags.name} />);
