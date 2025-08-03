@@ -71,6 +71,49 @@ export { AgentCommunicationSystem } from './communication.js';
 export { CoreOrchestrator } from './orchestrator.js';
 export { ModelSelector, createModelSelector } from './model-selector.js';
 
+// Configuration system
+export { ConfigurationManager, createConfigurationManager } from './configuration-manager.js';
+export { ConfigFileSystem, createConfigFileSystem } from './config-filesystem.js';
+export { CredentialManager, createCredentialManager } from './credential-manager.js';
+
+// Configuration types
+export type {
+  CompleteConfig,
+  UserConfig,
+  ConfigPaths,
+  ConfigLoadOptions,
+  ConfigValidationResult,
+  ConfigurationSuggestion,
+  ConfigMergeOptions,
+  ConfigMergeStrategy,
+  HotReloadConfig,
+  ConfigCacheOptions,
+  ConfigurationManagerEvents,
+  ModelSelectionConfig,
+  SecurityConfig,
+  EnvironmentConfig,
+  CredentialConfig,
+  CredentialEncryptionConfig,
+  CredentialRotationConfig,
+  APIProviderConfig,
+  CustomProviderConfig,
+  SecurityCheck,
+  SecurityAuditLog,
+  SecurityAuditConfig
+} from './configuration-types.js';
+
+// Security system
+export { 
+  SecurityValidatedAccessPattern,
+  SecurityAuditor,
+  createSecurityPattern,
+  createRestrictiveSecurityPattern,
+  createSecurityAuditor,
+  DEFAULT_SECURITY_PATTERNS,
+  SecurityLevel,
+  SecurityViolationType
+} from './security-patterns.js';
+
 // Import the actual types we need
 import type { OrchestrationConfig, AgentCapability } from './types.js';
 import { CoreOrchestrator } from './orchestrator.js';

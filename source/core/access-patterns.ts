@@ -10,7 +10,7 @@ import {
   type FileAccessContext,
   type AccessPatternResult,
   type OperationType
-} from './types.js';
+} from './types';
 
 /**
  * File system access pattern using glob patterns
@@ -35,7 +35,7 @@ export class FileSystemAccessPattern extends AccessPattern<FileAccessContext> {
 
     // Check if file matches any pattern
     const normalizedPath = this.normalizePath(context.filePath);
-    return this.filePatterns.some(pattern => 
+    return this.filePatterns.some(pattern =>
       minimatch(normalizedPath, pattern)
     );
   }
@@ -43,7 +43,7 @@ export class FileSystemAccessPattern extends AccessPattern<FileAccessContext> {
   async validate(context: FileAccessContext): Promise<AccessPatternResult> {
     return {
       allowed: this.allow,
-      reason: this.allow 
+      reason: this.allow
         ? `Allowed by pattern: ${this.description}`
         : `Denied by pattern: ${this.description}`,
       patternId: this.id,
@@ -81,7 +81,7 @@ export class DatabaseTableAccessPattern extends AccessPattern<DatabaseAccessCont
   }
 
   async appliesTo(context: DatabaseAccessContext): Promise<boolean> {
-    return this.tablePatterns.some(pattern => 
+    return this.tablePatterns.some(pattern =>
       minimatch(context.tableName, pattern)
     );
   }
@@ -131,7 +131,7 @@ export class APIEndpointAccessPattern extends AccessPattern<APIAccessContext> {
   }
 
   async appliesTo(context: APIAccessContext): Promise<boolean> {
-    return this.endpointPatterns.some(pattern => 
+    return this.endpointPatterns.some(pattern =>
       minimatch(context.endpoint, pattern)
     );
   }
@@ -198,7 +198,7 @@ export class CompositeAccessPattern<TContext extends AccessContext = AccessConte
     }
 
     const reasons = results.map(r => r.reason).filter(Boolean);
-    
+
     return {
       allowed,
       reason: reasons.join(this.logic === 'AND' ? ' AND ' : ' OR '),

@@ -6,7 +6,7 @@ import type {
   AccessPattern,
   AccessContext,
   AccessPatternResult
-} from './types.js';
+} from './types';
 
 /**
  * Cache for access pattern evaluations
@@ -48,7 +48,7 @@ export class AccessPatternEvaluator {
   ): Promise<AccessPatternResult> {
     // Generate cache key if caching is enabled
     const cacheKey = this.cacheEnabled ? this.generateCacheKey(pattern, context) : null;
-    
+
     // Check cache first
     if (cacheKey && this.cacheEnabled) {
       const cached = this.getCachedResult(cacheKey);
@@ -129,16 +129,16 @@ export class AccessPatternEvaluator {
         // First sort by priority (if available in metadata)
         const priorityA = (a.metadata?.priority as number) || 0;
         const priorityB = (b.metadata?.priority as number) || 0;
-        
+
         if (priorityA !== priorityB) {
           return priorityB - priorityA; // Higher priority first
         }
-        
+
         // If same priority, prefer allow over deny
         if (a.allowed !== b.allowed) {
           return a.allowed ? -1 : 1;
         }
-        
+
         return 0;
       });
 
@@ -236,7 +236,7 @@ export class AccessPatternEvaluator {
     if (this.cache.size >= this.maxCacheSize) {
       const entries = Array.from(this.cache.entries())
         .sort((a, b) => a[1].timestamp - b[1].timestamp);
-      
+
       const toRemove = entries.slice(0, Math.floor(this.maxCacheSize * 0.2));
       for (const [key] of toRemove) {
         this.cache.delete(key);

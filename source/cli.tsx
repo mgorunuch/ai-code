@@ -5,21 +5,7 @@ import meow from 'meow';
 import App from './app';
 
 const cli = meow(
-	`
-	Usage
-	  $ console-app
-
-	Options
-		--name     Your name
-		--settings Open settings menu
-
-	Examples
-	  $ console-app --name=Jane
-	  Hello, Jane
-	  
-	  $ console-app --settings
-	  Opens the settings menu for API keys
-`,
+	`Usage ai-code`,
 	{
 		importMeta: import.meta,
 		flags: {
@@ -29,8 +15,11 @@ const cli = meow(
 			settings: {
 				type: 'boolean',
 			},
+			agents: {
+				type: 'boolean',
+			},
 		},
 	},
 );
 
-render(<App name={cli.flags.name} settings={cli.flags.settings} />);
+render(<App name={cli.flags.name} settings={cli.flags.settings} agents={cli.flags.agents} />);

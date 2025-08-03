@@ -4,6 +4,14 @@
 
 The Core Orchestration System is a comprehensive framework for managing agent responsibilities, permissions, inter-agent communication, and **intelligent AI model selection**. This system uses a **tool-based architecture** where tools encapsulate both operations and access patterns, significantly simplifying agent configuration and permission management. The system includes **automated model selection** that enables multiple specialized agents to work together while maintaining granular security controls, clear access boundaries, and optimal performance through dynamic model routing.
 
+**New in 2025**: The system now includes a complete **configuration management system** that supports:
+- **.ai-code directory structure** for organized configuration
+- **Two-level configuration** (user + project) with intelligent merging
+- **Encrypted credential storage** with automatic rotation
+- **Hot-reloading** for development productivity
+- **Security validation patterns** with comprehensive audit trails
+- **Environment-specific configurations** (development, staging, production)
+
 > **Note**: The system has been modernized to use only the tool-based approach. All legacy compatibility layers and migration utilities have been removed for a clean, maintainable codebase.
 
 ## Key Features: Tool-Based Architecture
@@ -28,6 +36,62 @@ The core orchestration system has been updated to fix all TypeScript compilation
 - **Iterator Compatibility**: Fixed Map iterator issues for better cross-platform compatibility
 - **Modern Tool API**: Updated example code to use the current tool-based architecture
 - **Comprehensive Type Coverage**: All core files now compile without TypeScript errors
+
+### Critical API Key Persistence Fix (August 2025)
+
+**MAJOR ISSUE RESOLVED**: API keys set in settings now properly persist after application reload.
+
+**Problem Identified**: The Settings UI was using an in-memory storage system (`storage.tsx`) that was completely disconnected from the core orchestration system's encrypted credential management. This caused API keys to be lost on every restart.
+
+**Solution Implemented**: 
+1. **Integrated Settings with Core System**: The Settings component now connects to the `CoreOrchestrator` and `CredentialManager`
+2. **Persistent Encrypted Storage**: API keys are now stored using the core system's encrypted storage (`CredentialManager`) in `.ai-code/credentials/api-keys.enc`
+3. **Graceful Fallback**: If the core system is unavailable, the Settings gracefully falls back to session storage with clear user warnings
+4. **Master Password Support**: Users can initialize the encrypted credential system directly from the Settings UI
+5. **Automatic Configuration Setup**: The orchestrator now automatically creates the `.ai-code` directory structure when needed
+6. **Robust Error Handling**: Added comprehensive error handling and user feedback for credential initialization
+7. **Visual Storage Status**: Users can see whether their API keys are stored securely (encrypted) or temporarily (session only)
+
+**Key Files Modified**:
+- `/source/core/orchestrator.ts` - Added `initializeCredentialsForSettings()` method and improved initialization logic
+- `/source/core/configuration-manager.ts` - Enhanced credential manager initialization with automatic fallback
+- `/source/core/config-filesystem.ts` - Improved module loading to handle both .ts and .js files during development
+- `/source/Settings.tsx` - Integrated with core orchestration system and improved user feedback
+- `/source/types.tsx` - Added `isSecure` field to Provider interface for storage status indication
+
+**How It Works Now**:
+1. When Settings loads, it tries to initialize the core orchestration system
+2. If config files don't exist, it prompts the user for a master password
+3. The system automatically creates the `.ai-code` directory structure
+4. API keys are encrypted using AES-256-GCM with scrypt key derivation
+5. Keys persist across application restarts and are securely stored on disk
+6. Users get clear visual feedback about whether their keys are securely stored
+- **Dual System Support**: The Settings component handles both legacy storage (session-only) and core encrypted storage seamlessly
+
+**Technical Details**:
+- Settings component now imports and uses `CoreOrchestrator` for credential management
+- Implemented automatic detection of core system availability
+- Added master password initialization UI within Settings
+- API keys are stored encrypted and persist across application restarts
+- Clear user feedback indicates whether keys are stored persistently or temporarily
+
+**User Experience**: 
+- First-time users see a master password prompt to initialize secure storage
+- Existing users' API keys are automatically migrated to encrypted storage
+- Clear visual indicators show storage type (encrypted/persistent vs session/temporary)
+- Graceful error handling with fallback to session storage if core system fails
+
+### Configuration System Implementation (August 2025)
+
+A complete configuration management system has been implemented that follows the CONFIG_RULES.md specification:
+
+- **ConfigurationManager**: Central configuration loading, validation, and management
+- **ConfigFileSystem**: File system integration for .ai-code directory structure
+- **CredentialManager**: Encrypted storage and management of API keys and tokens
+- **SecurityPatterns**: Comprehensive security validation and audit logging
+- **Hot-Reloading**: Real-time configuration updates for development productivity
+- **Multi-Environment Support**: Separate configurations for development, staging, and production
+- **Intelligent Merging**: Two-level configuration (project + user) with conflict resolution
 
 ## AI Model Selection System
 
@@ -71,6 +135,30 @@ The system includes comprehensive **AI model selection** capabilities with auto 
    - Routes requests to appropriate agents
    - Integrates model selection for optimal performance
    - Orchestrates complex multi-agent workflows
+
+6. **ConfigurationManager** (`configuration-manager.ts`)
+   - Central configuration loading and management
+   - Two-level configuration merging (project + user)
+   - Configuration validation and hot-reloading
+   - Integration with credential and security systems
+
+7. **ConfigFileSystem** (`config-filesystem.ts`)
+   - .ai-code directory structure management
+   - TypeScript configuration file loading
+   - Agent configuration discovery
+   - File watching for hot-reload functionality
+
+8. **CredentialManager** (`credential-manager.ts`)
+   - Encrypted API key and token storage
+   - Automatic credential rotation
+   - Secure master key derivation
+   - Provider-specific credential management
+
+9. **SecurityPatterns** (`security-patterns.ts`)
+   - Comprehensive security validation
+   - Access pattern security checks
+   - Security audit logging and reporting
+   - Built-in protection against common vulnerabilities
 
 ## Key Features
 
@@ -448,6 +536,228 @@ const result = orchestrator.selectModelForOperation(
     requiredCapabilities: criteria.requiredCapabilities
   }
 );
+```
+
+### Configuration Management System
+
+The system provides comprehensive configuration management following the .ai-code directory structure:
+
+#### Directory Structure
+
+```
+.ai-code/
+├── agents/                    # Agent definitions
+│   ├── react.agent.ts        # React development agent
+│   ├── typescript.agent.ts   # TypeScript development agent
+│   └── common/               # Shared agent patterns
+├── config/                   # System configuration
+│   ├── orchestration.ts      # Main orchestration config
+│   ├── models.ts            # Model selection config
+│   └── security.ts          # Security and access patterns
+├── credentials/              # Encrypted credential storage
+│   ├── api-keys.enc         # Encrypted API keys
+│   ├── tokens.enc           # Encrypted access tokens
+│   └── backups/             # Credential backups
+└── user-config.ts           # User-specific overrides
+```
+
+#### Configuration Loading Process
+
+1. **System Defaults**: Basic operational defaults
+2. **Environment Configuration**: Development/staging/production settings
+3. **Project Configuration**: Team-shared settings in .ai-code/config/
+4. **User Configuration**: Personal overrides in .ai-code/user-config.ts
+5. **Runtime Overrides**: Highest priority runtime modifications
+
+#### Configuration Examples
+
+```typescript
+// .ai-code/config/orchestration.ts
+import type { OrchestrationConfig } from '@ai-code/core';
+import { reactAgent } from '../agents/react.agent.js';
+import { typescriptAgent } from '../agents/typescript.agent.js';
+
+export const orchestrationConfig: OrchestrationConfig = {
+  agents: [reactAgent, typescriptAgent],
+  defaultPermissions: {
+    requireExplicitToolGrants: true
+  },
+  accessPatterns: {
+    enabled: true,
+    enableCaching: true,
+    maxCacheSize: 2000
+  },
+  logging: {
+    level: 'info',
+    logCommunications: true,
+    logModelSelection: true,
+    logAccessPatterns: false
+  },
+  modelSelection: {
+    defaultModel: AIModel.CLAUDE_3_5_SONNET,
+    selectionStrategy: 'balanced',
+    autoMode: {
+      enabled: true,
+      costThreshold: 0.1,
+      performanceThreshold: 7
+    }
+  }
+};
+
+// .ai-code/user-config.ts
+import type { UserConfig } from '@ai-code/core';
+
+export const userConfig: UserConfig = {
+  logging: { level: 'debug' },
+  modelSelection: {
+    defaultModel: AIModel.CLAUDE_3_OPUS,
+    autoMode: { enabled: false }
+  }
+};
+
+// .ai-code/agents/react.agent.ts
+import type { AgentCapability } from '@ai-code/core';
+import { CommonTools, FileSystemAccessPattern } from '@ai-code/core';
+
+export const reactAgent: AgentCapability = {
+  id: 'react-dev',
+  name: 'React Development Agent',
+  description: 'Specialized for React component development',
+  tools: [...CommonTools.createReactTools()],
+  endpoints: [
+    { name: 'question', description: 'Answer React questions' },
+    { name: 'validate', description: 'Validate React components' }
+  ]
+};
+```
+
+#### Using the Configuration System
+
+```typescript
+import { CoreOrchestrator } from '@ai-code/core';
+
+// Initialize with configuration files
+const orchestrator = await CoreOrchestrator.createWithConfig(
+  process.cwd(), // Base directory
+  { 
+    environment: 'development',
+    enableHotReload: true,
+    validateOnLoad: true
+  }
+);
+
+// Initialize credentials
+await orchestrator.initializeCredentials('master-password');
+
+// Store API credentials
+await orchestrator.storeCredential('anthropic', 'sk-ant-...');
+await orchestrator.storeCredential('openai', 'sk-...');
+
+// Enable hot reloading for development
+await orchestrator.enableHotReload();
+
+// Update configuration programmatically
+await orchestrator.updateConfiguration('user', {
+  logging: { level: 'debug' }
+});
+
+// Add new agent configuration
+await orchestrator.addAgentConfiguration({
+  id: 'test-agent',
+  name: 'Testing Agent',
+  description: 'Automated testing agent',
+  tools: [...CommonTools.createTestTools()],
+  endpoints: [
+    { name: 'test', description: 'Run tests' }
+  ]
+});
+```
+
+#### Security and Validation
+
+```typescript
+// Built-in security patterns
+import { 
+  createSecurityPattern, 
+  DEFAULT_SECURITY_PATTERNS,
+  SecurityLevel 
+} from '@ai-code/core';
+
+// Apply security patterns to agents
+const secureAgent: AgentCapability = {
+  id: 'secure-agent',
+  name: 'Security-Validated Agent',
+  description: 'Agent with comprehensive security checks',
+  accessPatterns: [
+    createSecurityPattern(
+      'secure-dev-access',
+      'Secure development file access',
+      80,
+      ['src/**/*.ts', 'src/**/*.tsx', 'test/**/*'],
+      [/* additional custom security checks */]
+    )
+  ],
+  tools: [...CommonTools.createReactTools()],
+  endpoints: [/* ... */]
+};
+
+// Security audit reporting
+const securityReport = orchestrator.getSecurityAuditReport({
+  start: new Date(Date.now() - 24 * 60 * 60 * 1000), // Last 24 hours
+  end: new Date()
+});
+
+console.log('Security Report:', {
+  totalEvents: securityReport.totalEvents,
+  deniedEvents: securityReport.deniedEvents,
+  criticalEvents: securityReport.criticalEvents,
+  topAgents: securityReport.topAgents,
+  securityTrends: securityReport.securityTrends
+});
+```
+
+#### Environment-Specific Configuration
+
+```typescript
+// Automatic environment detection and configuration
+const config = await orchestrator.loadConfiguration({
+  environment: process.env.NODE_ENV, // 'development', 'staging', 'production'
+  validateOnLoad: true
+});
+
+// Different settings per environment
+if (process.env.NODE_ENV === 'production') {
+  await orchestrator.updateConfiguration('orchestration', {
+    logging: { level: 'warn', logCommunications: false },
+    modelSelection: {
+      autoMode: { costThreshold: 0.02 } // Stricter cost control
+    }
+  });
+}
+```
+
+#### Configuration Validation
+
+```typescript
+// Validate configuration
+const validation = await orchestrator.validateConfiguration();
+
+if (!validation.valid) {
+  console.error('Configuration errors:', validation.errors);
+  console.warn('Configuration warnings:', validation.warnings);
+}
+
+console.log('Loaded components:', validation.loadedComponents);
+console.log('Suggestions:', validation.suggestions);
+
+// Get configuration statistics
+const stats = orchestrator.getConfigurationStats();
+console.log('Configuration stats:', {
+  totalAgents: stats.totalAgents,
+  totalProviders: stats.totalProviders,
+  hotReloadEnabled: stats.hotReloadEnabled,
+  cacheHitRate: stats.cacheHitRate
+});
 ```
 
 ### Inter-Agent Communication
@@ -1044,6 +1354,165 @@ The system provides comprehensive error handling:
 2. **Context Rich**: Provide detailed context in requests
 3. **Async Aware**: Design for asynchronous communication
 4. **Error Resilient**: Handle communication failures gracefully
+
+### Configuration Management Best Practices
+
+#### File Organization
+
+1. **Logical Grouping**: Group related agents in the agents/ directory
+2. **Descriptive Names**: Use clear, descriptive names for agent files (e.g., `react.agent.ts`)
+3. **Common Patterns**: Share reusable patterns in the common/ directory
+4. **Environment Separation**: Use environment-specific configurations
+5. **Version Control**: Include .ai-code/ in version control (except credentials/)
+
+#### Security Practices
+
+1. **Credential Isolation**: Never commit API keys or credentials to version control
+2. **Strong Master Password**: Use a strong master password for credential encryption
+3. **Regular Rotation**: Enable automatic credential rotation for production
+4. **Access Pattern Validation**: Use security patterns to validate agent access
+5. **Audit Monitoring**: Regularly review security audit logs
+
+#### Development Workflow
+
+1. **Hot Reload**: Enable hot reloading during development for productivity
+2. **Validation**: Always validate configuration before deployment
+3. **Testing**: Test configuration changes in staging environments
+4. **Backup**: Regular backup of configuration and credentials
+5. **Documentation**: Document custom configurations and patterns
+
+#### Configuration Examples
+
+```typescript
+// Good: Clear, secure agent configuration
+export const databaseAgent: AgentCapability = {
+  id: 'database-manager',
+  name: 'Database Management Agent',
+  description: 'Handles database operations with security validation',
+  accessPatterns: [
+    createSecurityPattern(
+      'db-access',
+      'Secure database file access',
+      90,
+      ['**/migrations/**/*', '**/schemas/**/*', '**/*.sql'],
+      [customDatabaseSecurityChecks]
+    )
+  ],
+  tools: [
+    ...CommonTools.createDatabaseTools(),
+    new CommunicationTool({ id: 'db-comm' })
+  ],
+  endpoints: [
+    { name: 'migrate', description: 'Run database migrations' },
+    { name: 'validate', description: 'Validate schema definitions' }
+  ]
+};
+
+// Good: Environment-aware configuration
+export const orchestrationConfig: OrchestrationConfig = {
+  agents: [databaseAgent, reactAgent, typescriptAgent],
+  defaultPermissions: {
+    requireExplicitToolGrants: true // Always secure by default
+  },
+  logging: {
+    level: process.env.NODE_ENV === 'production' ? 'warn' : 'debug',
+    logCommunications: process.env.NODE_ENV !== 'production',
+    logModelSelection: true,
+    logAccessPatterns: process.env.NODE_ENV === 'development'
+  },
+  modelSelection: {
+    defaultModel: AIModel.CLAUDE_3_5_SONNET,
+    selectionStrategy: process.env.NODE_ENV === 'production' 
+      ? 'cost-optimized' 
+      : 'balanced',
+    autoMode: {
+      enabled: true,
+      costThreshold: process.env.NODE_ENV === 'production' ? 0.02 : 0.1
+    }
+  }
+};
+
+// Good: User configuration overrides
+export const userConfig: UserConfig = {
+  // Personal preferences that don't affect security
+  logging: { level: 'debug' },
+  modelSelection: {
+    defaultModel: AIModel.CLAUDE_3_OPUS, // User prefers higher quality
+    customWeights: {
+      cost: 0.1,     // User prioritizes quality over cost
+      quality: 0.6,
+      speed: 0.2,
+      accuracy: 0.1
+    }
+  }
+};
+```
+
+#### Common Pitfalls to Avoid
+
+❌ **Don't**: Store credentials in configuration files
+```typescript
+// BAD - Never do this
+export const config = {
+  apiKey: 'sk-ant-1234567890' // Exposed in version control
+};
+```
+
+✅ **Do**: Use the credential manager
+```typescript
+// GOOD - Use encrypted storage
+await orchestrator.storeCredential('anthropic', apiKey);
+const apiKey = await orchestrator.getCredential('anthropic');
+```
+
+❌ **Don't**: Give agents overly broad access
+```typescript
+// BAD - Too permissive
+const agent: AgentCapability = {
+  accessPatterns: [
+    new FileSystemAccessPattern('all-access', 'All files', 1, ['**/*'], true)
+  ]
+};
+```
+
+✅ **Do**: Use specific, security-validated patterns
+```typescript
+// GOOD - Specific and secure
+const agent: AgentCapability = {
+  accessPatterns: [
+    createSecurityPattern(
+      'react-dev-access',
+      'React development files only',
+      50,
+      ['src/**/*.tsx', 'src/**/*.jsx', 'test/**/*.test.*']
+    )
+  ]
+};
+```
+
+❌ **Don't**: Disable security features
+```typescript
+// BAD - Compromises security
+export const config = {
+  defaultPermissions: { requireExplicitToolGrants: false },
+  security: { audit: { enabled: false } }
+};
+```
+
+✅ **Do**: Keep security enabled with appropriate logging
+```typescript
+// GOOD - Security-first approach
+export const config = {
+  defaultPermissions: { requireExplicitToolGrants: true },
+  security: {
+    audit: { 
+      enabled: true, 
+      logLevel: 'denied',
+      retentionPeriod: 90 
+    }
+  }
+};
+```
 
 ## Model Selection Best Practices
 

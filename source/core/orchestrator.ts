@@ -1,6 +1,13 @@
 /**
  * Core Orchestration Engine
  * Main orchestrator that routes requests, enforces permissions, and coordinates agents
+ * 
+ * Enhanced with comprehensive configuration management system supporting:
+ * - .ai-code directory structure
+ * - Two-level configuration (user + project)
+ * - Encrypted credential storage
+ * - Hot-reloading
+ * - Security validation
  */
 
 import { EventEmitter } from 'events';
@@ -23,6 +30,14 @@ import { AgentRegistry } from './agent-registry.js';
 import { PermissionSystem } from './permissions.js';
 import { AgentCommunicationSystem } from './communication.js';
 import { ModelSelector, createModelSelector, DEFAULT_MODEL_CONFIGS, DEFAULT_AUTO_MODE_CONFIG } from './model-selector.js';
+import { ConfigurationManager, createConfigurationManager } from './configuration-manager.js';
+import type { 
+  CompleteConfig, 
+  ConfigLoadOptions, 
+  ConfigValidationResult,
+  ConfigurationManagerEvents
+} from './configuration-types.js';
+import { SecurityAuditor, createSecurityAuditor, DEFAULT_SECURITY_PATTERNS } from './security-patterns.js';
 
 export interface RequestHandler {
   (request: OperationRequest): Promise<OperationResponse>;
@@ -41,6 +56,13 @@ export interface OrchestrationEvents {
   modelSelected: (criteria: ModelSelectionCriteria, result: ModelSelectionResult) => void;
   modelSelectionFailed: (criteria: ModelSelectionCriteria, error: string) => void;
   autoModeTriggered: (criteria: ModelSelectionCriteria) => void;
+  // Configuration system events
+  configLoaded: (config: CompleteConfig) => void;
+  configReloaded: (config: CompleteConfig) => void;
+  configValidated: (result: ConfigValidationResult) => void;
+  configError: (error: Error) => void;
+  credentialsUpdated: (provider: string) => void;
+  securityAlert: (agentId: AgentId, violation: string) => void;
 }
 
 export class CoreOrchestrator extends EventEmitter {
@@ -48,15 +70,18 @@ export class CoreOrchestrator extends EventEmitter {
   private permissionSystem: PermissionSystem;
   private communicationSystem: AgentCommunicationSystem;
   private modelSelector: ModelSelector;
+  private configurationManager: ConfigurationManager;
+  private securityAuditor: SecurityAuditor;
   private requestHandlers: Map<AgentId, RequestHandler> = new Map();
-  private config: OrchestrationConfig;
+  private config: CompleteConfig | OrchestrationConfig;
   private requestHistory: Map<string, OperationRequest> = new Map();
   private responseHistory: Map<string, OperationResponse> = new Map();
+  private configInitialized = false;
 
-  constructor(config?: Partial<OrchestrationConfig>) {
+  constructor(config?: Partial<OrchestrationConfig>, baseDir?: string) {
     super();
 
-    // Initialize default configuration
+    // Initialize default configuration (will be replaced when config system loads)
     this.config = {
       agents: [],
       defaultPermissions: {
@@ -89,6 +114,14 @@ export class CoreOrchestrator extends EventEmitter {
       },
       ...config
     };
+
+    // Initialize configuration manager
+    this.configurationManager = createConfigurationManager(baseDir, {
+      hotReloadConfig: { enabled: false } // Disabled by default, can be enabled with initializeFromConfigFiles
+    });
+    
+    // Initialize security auditor
+    this.securityAuditor = createSecurityAuditor();
 
     // Initialize core systems with access patterns config
     this.agentRegistry = new AgentRegistry(this.config.accessPatterns);
@@ -165,6 +198,186 @@ export class CoreOrchestrator extends EventEmitter {
 
     this.requestHandlers.set(agentId, handler);
     this.log('info', `Request handler registered for agent: ${agentId}`);
+  }
+
+  /**
+   * Initialize orchestrator from .ai-code configuration files
+   */
+  async initializeFromConfigFiles(options: ConfigLoadOptions = {}): Promise<CompleteConfig> {
+    try {
+      this.log('info', 'Initializing orchestrator from .ai-code configuration files...');
+      
+      // Load configuration from files
+      const config = await this.configurationManager.initialize(options);
+      
+      // Apply the loaded configuration
+      await this.applyConfiguration(config);
+      
+      this.configInitialized = true;
+      this.emit('configLoaded', config);
+      
+      this.log('info', `Configuration loaded successfully. ${config.agents?.length || 0} agents configured.`);
+      return config;
+    } catch (error) {
+      this.emit('configError', error as Error);
+      throw new Error(`Failed to initialize from config files: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Initialize credentials with master password
+   * Will automatically initialize configuration if not already done
+   */
+  async initializeCredentials(masterPassword: string): Promise<void> {
+    try {
+      // If configuration is not initialized, initialize it first
+      if (!this.configInitialized) {
+        this.log('info', 'Configuration not initialized, initializing with defaults...');
+        try {
+          await this.initializeFromConfigFiles({ 
+            validateOnLoad: false,
+            enableHotReload: false 
+          });
+        } catch (configError) {
+          // If config initialization fails, continue with minimal config for credentials
+          this.log('warn', 'Config initialization failed, using minimal config for credentials');
+          this.configInitialized = true; // Allow credentials to be initialized anyway
+        }
+      }
+      
+      await this.configurationManager.initializeCredentials(masterPassword);
+      this.emit('credentialsUpdated', 'system');
+      this.log('info', 'Credentials initialized successfully');
+    } catch (error) {
+      this.emit('configError', error as Error);
+      throw new Error(`Failed to initialize credentials: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Initialize credentials with minimal configuration (for Settings UI)
+   * This creates the necessary directory structure and initializes credential storage
+   */
+  async initializeCredentialsForSettings(masterPassword: string): Promise<void> {
+    try {
+      // Ensure configuration manager is set up with minimal config
+      if (!this.configInitialized) {
+        // Create the credential manager with default config if needed
+        if (!this.configurationManager.getCurrentConfig()?.security?.credentials) {
+          this.log('info', 'Setting up minimal configuration for credential storage...');
+          
+          // Create minimal security config with default settings  
+          const minimalConfig = {
+            ...this.config,
+            security: {
+              credentials: {
+                encryption: {
+                  algorithm: 'aes-256-gcm' as const,
+                  keyDerivation: 'scrypt' as const,
+                  iterations: 100000
+                },
+                providers: {},
+                rotation: {
+                  enabled: false,
+                  interval: 24 * 7, // Weekly
+                  backupCount: 3
+                }
+              },
+              audit: {
+                enabled: true,
+                logLevel: 'denied' as const,
+                retentionPeriod: 90,
+                alertThresholds: {
+                  deniedRequestsPerHour: 100,
+                  criticalEventsPerDay: 10
+                }
+              }
+            }
+          };
+          
+          await this.applyConfiguration(minimalConfig as any);
+        }
+        this.configInitialized = true;
+      }
+      
+      await this.configurationManager.initializeCredentials(masterPassword);
+      this.emit('credentialsUpdated', 'system');
+      this.log('info', 'Credentials initialized successfully for Settings');
+    } catch (error) {
+      this.emit('configError', error as Error);
+      throw new Error(`Failed to initialize credentials for Settings: ${(error as Error).message}`);
+    }
+  }
+
+  /**
+   * Get credential for a provider
+   */
+  async getCredential(provider: string): Promise<string> {
+    return await this.configurationManager.getCredential(provider);
+  }
+
+  /**
+   * Store a credential
+   */
+  async storeCredential(provider: string, credential: string): Promise<void> {
+    await this.configurationManager.storeCredential(provider, credential);
+    this.emit('credentialsUpdated', provider);
+  }
+
+  /**
+   * Update configuration and reload
+   */
+  async updateConfiguration(
+    configType: 'orchestration' | 'user' | 'models' | 'security',
+    updates: any
+  ): Promise<void> {
+    await this.configurationManager.updateConfiguration(configType, updates);
+    
+    // Configuration will be automatically reloaded through event handlers
+    this.log('info', `${configType} configuration updated`);
+  }
+
+  /**
+   * Add a new agent configuration
+   */
+  async addAgentConfiguration(agent: AgentCapability): Promise<void> {
+    await this.configurationManager.addAgentConfiguration(agent);
+    // Agent will be automatically registered through event handlers
+  }
+
+  /**
+   * Validate current configuration
+   */
+  async validateConfiguration(): Promise<ConfigValidationResult> {
+    const currentConfig = this.configurationManager.getCurrentConfig();
+    if (!currentConfig) {
+      throw new Error('No configuration loaded');
+    }
+    
+    return await this.configurationManager.validateConfiguration(currentConfig);
+  }
+
+  /**
+   * Get configuration statistics
+   */
+  getConfigurationStats(): any {
+    return this.configurationManager.getConfigurationStats();
+  }
+
+  /**
+   * Enable hot reloading of configuration files
+   */
+  async enableHotReload(): Promise<void> {
+    await this.configurationManager.enableHotReload();
+    this.log('info', 'Hot reload enabled for configuration files');
+  }
+
+  /**
+   * Disable hot reloading
+   */
+  async disableHotReload(): Promise<void> {
+    await this.configurationManager.disableHotReload();
+    this.log('info', 'Hot reload disabled');
   }
 
   /**
@@ -703,6 +916,65 @@ export class CoreOrchestrator extends EventEmitter {
   }
 
   /**
+   * Apply loaded configuration to all systems
+   */
+  private async applyConfiguration(config: CompleteConfig): Promise<void> {
+    this.log('info', 'Applying configuration to orchestrator systems...');
+    
+    // Update internal config
+    this.config = config;
+    
+    // Reinitialize core systems with new configuration
+    this.agentRegistry = new AgentRegistry(config.accessPatterns);
+    this.permissionSystem = new PermissionSystem(this.agentRegistry);
+    this.communicationSystem = new AgentCommunicationSystem(this.agentRegistry);
+    
+    // Update model selector
+    if (config.modelSelection) {
+      this.modelSelector = createModelSelector(
+        config.modelSelection.availableModels,
+        config.modelSelection.autoMode
+      );
+    }
+    
+    // Apply security patterns if available
+    if (config.security?.globalSecurityPatterns) {
+      for (const pattern of config.security.globalSecurityPatterns) {
+        this.agentRegistry.addGlobalPattern(pattern);
+      }
+    }
+    
+    // Register agents from configuration
+    const existingAgents = new Set(Array.from(this.requestHandlers.keys()));
+    
+    // Unregister agents that are no longer in config
+    for (const agentId of existingAgents) {
+      if (!config.agents?.find(agent => agent.id === agentId)) {
+        this.unregisterAgent(agentId);
+      }
+    }
+    
+    // Register new agents from config
+    if (config.agents) {
+      for (const agent of config.agents) {
+        if (!existingAgents.has(agent.id)) {
+          try {
+            this.registerAgent(agent);
+          } catch (error) {
+            this.log('warn', `Failed to register agent ${agent.id}:`, error);
+          }
+        }
+      }
+    }
+    
+    // Re-setup event handlers with new configuration
+    this.removeAllListeners();
+    this.setupEventHandlers();
+    
+    this.log('info', `Configuration applied. ${config.agents?.length || 0} agents configured.`);
+  }
+
+  /**
    * Setup event handlers for communication and model selection systems
    */
   private setupEventHandlers(): void {
@@ -745,6 +1017,140 @@ export class CoreOrchestrator extends EventEmitter {
         this.log('info', `Model selector configuration updated`);
       }
     });
+
+    // Setup configuration manager event handlers
+    this.configurationManager.on('configLoaded', (config) => {
+      this.emit('configLoaded', config);
+      this.log('info', 'Configuration loaded successfully');
+    });
+
+    this.configurationManager.on('configReloaded', async (config) => {
+      try {
+        await this.applyConfiguration(config);
+        this.emit('configReloaded', config);
+        this.log('info', 'Configuration reloaded and applied successfully');
+      } catch (error) {
+        this.emit('configError', error as Error);
+        this.log('error', 'Failed to apply reloaded configuration:', error);
+      }
+    });
+
+    this.configurationManager.on('configValidated', (result) => {
+      this.emit('configValidated', result);
+      if (!result.valid) {
+        this.log('warn', `Configuration validation failed: ${result.errors.join(', ')}`);
+      }
+    });
+
+    this.configurationManager.on('configError', (error) => {
+      this.emit('configError', error);
+      // Don't log "No credential found" errors as they are normal when providers don't have credentials yet
+      if (!error.message.includes('No credential found for provider')) {
+        this.log('error', 'Configuration system error:', error);
+      }
+    });
+
+    this.configurationManager.on('agentConfigLoaded', (agent) => {
+      this.log('info', `Agent configuration loaded: ${agent.id} (${agent.name})`);
+      try {
+        this.registerAgent(agent);
+      } catch (error) {
+        this.log('warn', `Failed to register agent ${agent.id}:`, error);
+      }
+    });
+
+    this.configurationManager.on('credentialsUpdated', (provider) => {
+      this.emit('credentialsUpdated', provider);
+      this.log('info', `Credentials updated for provider: ${provider}`);
+    });
+
+    this.configurationManager.on('securityAlert', (alert) => {
+      this.securityAuditor.logSecurityEvent(
+        alert.agentId,
+        alert.operation,
+        alert.resource,
+        alert.allowed,
+        alert.reason,
+        alert.securityLevel
+      );
+      
+      if (!alert.allowed) {
+        this.emit('securityAlert', alert.agentId, alert.reason || 'Security violation');
+        this.log('warn', `Security alert: ${alert.agentId} - ${alert.reason}`);
+      }
+    });
+  }
+
+  /**
+   * Get security audit report
+   */
+  getSecurityAuditReport(timeRange?: { start: Date; end: Date }): any {
+    return this.securityAuditor.generateSecurityReport(timeRange);
+  }
+
+  /**
+   * Get recent security events
+   */
+  getRecentSecurityEvents(limit: number = 100): any[] {
+    return this.securityAuditor.getRecentEvents(limit);
+  }
+
+  /**
+   * Get denied access events
+   */
+  getDeniedAccessEvents(limit: number = 50): any[] {
+    return this.securityAuditor.getDeniedEvents(limit);
+  }
+
+  /**
+   * Get security events for a specific agent
+   */
+  getAgentSecurityEvents(agentId: AgentId, limit: number = 50): any[] {
+    return this.securityAuditor.getEventsByAgent(agentId, limit);
+  }
+
+  /**
+   * Create a new configuration-enabled orchestrator
+   */
+  static async createWithConfig(
+    baseDir?: string,
+    configOptions: ConfigLoadOptions = {},
+    orchestratorConfig?: Partial<OrchestrationConfig>
+  ): Promise<CoreOrchestrator> {
+    const orchestrator = new CoreOrchestrator(orchestratorConfig, baseDir);
+    await orchestrator.initializeFromConfigFiles(configOptions);
+    return orchestrator;
+  }
+
+  /**
+   * Clean up and destroy the orchestrator
+   */
+  async destroy(): Promise<void> {
+    this.log('info', 'Shutting down orchestrator...');
+    
+    // Disable hot reload
+    try {
+      await this.disableHotReload();
+    } catch (error) {
+      this.log('warn', 'Error disabling hot reload:', error);
+    }
+    
+    // Clean up configuration manager
+    try {
+      await this.configurationManager.destroy();
+    } catch (error) {
+      this.log('warn', 'Error destroying configuration manager:', error);
+    }
+    
+    // Clear handlers and history
+    this.requestHandlers.clear();
+    this.requestHistory.clear();
+    this.responseHistory.clear();
+    
+    // Remove all event listeners
+    this.removeAllListeners();
+    
+    this.log('info', 'Orchestrator shutdown complete');
   }
 
   /**

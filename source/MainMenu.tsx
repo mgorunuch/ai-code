@@ -11,12 +11,14 @@ interface MainMenuProps {
   onStartApp: () => void;
   onOpenSettings: () => void;
   onShowHelp: () => void;
+  onOpenAgents?: () => void;
 }
 
 export const MainMenu: React.FC<MainMenuProps> = ({ 
   onStartApp, 
   onOpenSettings, 
-  onShowHelp 
+  onShowHelp,
+  onOpenAgents 
 }) => {
   const { exit } = useApp();
   const [selectedIndex, setSelectedIndex] = useState(0);
@@ -26,6 +28,11 @@ export const MainMenu: React.FC<MainMenuProps> = ({
       id: 'start',
       label: 'Start/Enter Main App',
       action: onStartApp
+    },
+    {
+      id: 'agents',
+      label: 'Agent Dashboard',
+      action: onOpenAgents || (() => {})
     },
     {
       id: 'settings',
@@ -42,7 +49,7 @@ export const MainMenu: React.FC<MainMenuProps> = ({
       label: 'Exit',
       action: () => exit()
     }
-  ];
+  ].filter(item => item.id !== 'agents' || onOpenAgents); // Hide agents if no handler
 
   useInput((_input, key) => {
     if (key.upArrow) {

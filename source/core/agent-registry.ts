@@ -3,9 +3,9 @@
  */
 
 import { minimatch } from 'minimatch';
-import type { 
-  AgentCapability, 
-  AgentId, 
+import type {
+  AgentCapability,
+  AgentId,
   FilePath,
   PermissionResult,
   AgentTool,
@@ -14,13 +14,13 @@ import type {
   AccessPatternResult,
   AccessPatternsConfig
 } from './types.js';
-import { OperationType } from './types.js';
-import { 
+import { OperationType } from './types';
+import {
   hasAgentToolForOperation,
   getToolsForOperation,
   createFileAccessContext
 } from './types.js';
-import { AccessPatternEvaluator } from './access-pattern-evaluator.js';
+import { AccessPatternEvaluator } from './access-pattern-evaluator';
 
 export class AgentRegistry {
   private agents: Map<AgentId, AgentCapability> = new Map();
@@ -104,7 +104,7 @@ export class AgentRegistry {
    * Find responsible agent using tool-based access patterns
    */
   private async findResponsibleAgentWithToolPatterns(
-    filePath: FilePath, 
+    filePath: FilePath,
     operation?: OperationType
   ): Promise<AgentCapability | undefined> {
     const context = createFileAccessContext(
@@ -122,7 +122,7 @@ export class AgentRegistry {
       }
 
       // Get tools that can handle this operation
-      const capableTools = operation 
+      const capableTools = operation
         ? getToolsForOperation(agent, operation)
         : agent.tools;
 
@@ -130,11 +130,11 @@ export class AgentRegistry {
       for (const tool of capableTools) {
         try {
           const result = await tool.checkAccess(context);
-          
+
           if (result.allowed) {
             const priority = (result.metadata?.priority as number) || 0;
             const currentPriority = (bestMatch?.result.metadata?.priority as number) || 0;
-            
+
             if (!bestMatch || priority > currentPriority) {
               bestMatch = { agent, result };
             }
@@ -200,8 +200,8 @@ export class AgentRegistry {
    * Check permissions for an operation
    */
   checkPermissions(
-    agentId: AgentId, 
-    operation: OperationType, 
+    agentId: AgentId,
+    operation: OperationType,
     filePath?: FilePath
   ): PermissionResult {
     const agent = this.agents.get(agentId);
@@ -227,7 +227,7 @@ export class AgentRegistry {
     if (!filePath) {
       const hasCapableTool = hasAgentToolForOperation(agent, operation);
       const capableTools = getToolsForOperation(agent, operation);
-      
+
       return {
         allowed: hasCapableTool,
         reason: hasCapableTool ? undefined : `Agent ${agent.id} has no tools that can handle ${operation}`,
@@ -238,7 +238,7 @@ export class AgentRegistry {
 
     // For file operations, check if any tool can handle the operation
     const capableTools = getToolsForOperation(agent, operation);
-    
+
     if (capableTools.length === 0) {
       return {
         allowed: false,
@@ -290,10 +290,10 @@ export class AgentRegistry {
     operation: OperationType
   ): Promise<AccessPatternResult> {
     const context = createFileAccessContext(filePath, operation, agent.id);
-    
+
     // Get tools that can handle this operation
     const capableTools = getToolsForOperation(agent, operation);
-    
+
     if (capableTools.length === 0) {
       return {
         allowed: false,
@@ -304,15 +304,15 @@ export class AgentRegistry {
 
     // Check access for each capable tool and return the best result
     let bestResult: AccessPatternResult | undefined;
-    
+
     for (const tool of capableTools) {
       try {
         const result = await tool.checkAccess(context);
-        
+
         if (result.allowed) {
           const priority = (result.metadata?.priority as number) || 0;
           const currentPriority = (bestResult?.metadata?.priority as number) || 0;
-          
+
           if (!bestResult || priority > currentPriority) {
             bestResult = result;
           }
@@ -361,7 +361,7 @@ export class AgentRegistry {
     cacheStats: ReturnType<AccessPatternEvaluator['getCacheStats']>;
   } {
     const agents = Array.from(this.agents.values());
-    
+
     return {
       totalAgents: agents.length,
       agentsWithTools: agents.filter(a => a.tools && a.tools.length > 0).length,
@@ -375,7 +375,7 @@ export class AgentRegistry {
    */
   updateAccessPatternsConfig(config: Partial<AccessPatternsConfig>): void {
     this.accessPatternsConfig = { ...this.accessPatternsConfig, ...config };
-    
+
     // Update evaluator if caching settings changed
     if (config.enableCaching !== undefined || config.maxCacheSize !== undefined) {
       this.accessPatternEvaluator = new AccessPatternEvaluator({
@@ -411,7 +411,7 @@ export class AgentRegistry {
         throw new Error('All agent endpoints must have a valid name');
       }
     }
-    
+
     // Validate tools (check that they implement the AgentTool interface)
     for (const tool of agent.tools) {
       if (!tool.id || !tool.name || typeof tool.canHandle !== 'function') {

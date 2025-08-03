@@ -51,3 +51,6 @@ coverage/
 
 # ESLint cache
 .eslintcache
+
+# AI Code directory
+.ai-code

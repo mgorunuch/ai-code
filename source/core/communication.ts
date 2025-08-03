@@ -3,14 +3,14 @@
  * Handles messaging between agents and question/answer functionality
  */
 
-import type { 
-  AgentId, 
-  AgentMessage, 
-  QuestionRequest, 
+import type {
+  AgentId,
+  AgentMessage,
+  QuestionRequest,
   QuestionResponse,
-  AgentCapability 
-} from './types.js';
-import { AgentRegistry } from './agent-registry.js';
+  AgentCapability
+} from './types';
+import { AgentRegistry } from './agent-registry';
 
 export interface CommunicationEvents {
   messageSent: (message: AgentMessage) => void;
@@ -31,7 +31,7 @@ export class AgentCommunicationSystem {
    * Register a question handler for an agent
    */
   registerQuestionHandler(
-    agentId: AgentId, 
+    agentId: AgentId,
     handler: (question: QuestionRequest) => Promise<QuestionResponse>
   ): void {
     this.questionHandlers.set(agentId, handler);
@@ -82,8 +82,8 @@ export class AgentCommunicationSystem {
    * Ask a question to a specific agent
    */
   async askQuestion(
-    fromAgent: AgentId, 
-    toAgent: AgentId, 
+    fromAgent: AgentId,
+    toAgent: AgentId,
     question: QuestionRequest
   ): Promise<QuestionResponse> {
     // Validate agents
@@ -200,7 +200,7 @@ export class AgentCommunicationSystem {
    */
   getMessageHistory(agentId?: AgentId): AgentMessage[] {
     const messages = Array.from(this.messageHistory.values());
-    
+
     if (agentId) {
       return messages.filter(msg => msg.from === agentId || msg.to === agentId);
     }
@@ -234,7 +234,7 @@ export class AgentCommunicationSystem {
    * Emit event
    */
   private emit<K extends keyof CommunicationEvents>(
-    event: K, 
+    event: K,
     ...args: Parameters<CommunicationEvents[K]>
   ): void {
     const listener = this.eventListeners[event];
