@@ -26,18 +26,6 @@ export const NewPasswordScreen: React.FC<NewPasswordScreenProps> = ({
 				</Box>
 			)}
 
-			<Box marginBottom={1} flexDirection="column">
-				<Text color="green">
-					Welcome! Let's secure your API keys with encryption.
-				</Text>
-				<Text color="gray">
-					Create a master password to protect your credentials between sessions.
-				</Text>
-				<Text color="yellow" dimColor>
-					💡 Choose a strong password you'll remember - it cannot be recovered if lost.
-				</Text>
-			</Box>
-
 			<Box marginBottom={1}>
 				<Text>Create Master Password: </Text>
 				<Text color="green">
