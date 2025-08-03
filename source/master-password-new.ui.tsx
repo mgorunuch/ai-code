@@ -1,5 +1,6 @@
 import React from 'react';
 import { Box, Text } from 'ink';
+import { Logo } from './logo';
 
 interface NewPasswordScreenProps {
 	masterPassword: string;
@@ -14,6 +15,10 @@ export const NewPasswordScreen: React.FC<NewPasswordScreenProps> = ({
 }) => {
 	return (
 		<Box flexDirection="column" padding={1}>
+			<Box marginBottom={1}>
+				<Logo />
+			</Box>
+			
 			<Box marginBottom={1}>
 				<Text bold color="cyan">
 					🔐 Set Up Secure Credential Storage

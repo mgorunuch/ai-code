@@ -69,6 +69,8 @@ export const useMainMenuLogic = ({
 			setSelectedIndex((prev) => (prev + 1) % menuItems.length);
 		} else if (key.return) {
 			menuItems[selectedIndex]?.action();
+		} else if (key.escape) {
+			exit();
 		}
 	});
 

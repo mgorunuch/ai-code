@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { MAX_PASSWORD_ATTEMPTS } from './const';
+import { Logo } from './logo';
 
 interface EnterPasswordScreenProps {
 	masterPassword: string;
@@ -17,6 +18,10 @@ export const EnterPasswordScreen: React.FC<EnterPasswordScreenProps> = ({
 }) => {
 	return (
 		<Box flexDirection="column" padding={1}>
+			<Box marginBottom={1}>
+				<Logo />
+			</Box>
+			
 			<Box marginBottom={1}>
 				<Text bold color="cyan">
 					🔓 Unlock Credential Storage

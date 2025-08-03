@@ -1,28 +1,15 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { useMainMenuLogic, MainMenuProps } from './main-menu.logic';
+import { Logo } from './logo';
 
 export const MainMenu: React.FC<MainMenuProps> = (props) => {
 	const { selectedIndex, menuItems } = useMainMenuLogic(props);
 
 	return (
-		<Box flexDirection="column" alignItems="center" paddingTop={2}>
-			<Box marginBottom={2} flexDirection="column" alignItems="center">
-				<Text color="cyan" bold>
-					╔═══════════════════════════╗
-				</Text>
-				<Text color="cyan" bold>
-					║     Hello to ai-code      ║
-				</Text>
-				<Text color="cyan" bold>
-					╚═══════════════════════════╝
-				</Text>
-			</Box>
-
+		<Box flexDirection="column" paddingTop={1}>
 			<Box marginBottom={1}>
-				<Text color="cyan" bold>
-					Welcome to ai-code CLI
-				</Text>
+				<Logo />
 			</Box>
 
 			<Box flexDirection="column" marginTop={2}>
@@ -37,7 +24,7 @@ export const MainMenu: React.FC<MainMenuProps> = (props) => {
 			</Box>
 
 			<Box marginTop={2}>
-				<Text dimColor>Use ↑↓ arrows to navigate, Enter to select</Text>
+				<Text dimColor>Use ↑↓ arrows to navigate, Enter to select, Escape to exit</Text>
 			</Box>
 		</Box>
 	);

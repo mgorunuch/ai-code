@@ -1,6 +1,7 @@
 import React from 'react';
 import { Box, Text } from 'ink';
 import { MAX_PASSWORD_ATTEMPTS } from './const';
+import { Logo } from './logo';
 
 interface LockedScreenProps {
 	error: string | null;
@@ -9,6 +10,10 @@ interface LockedScreenProps {
 export const LockedScreen: React.FC<LockedScreenProps> = ({ error }) => {
 	return (
 		<Box flexDirection="column" padding={1}>
+			<Box marginBottom={1}>
+				<Logo />
+			</Box>
+			
 			<Box marginBottom={1}>
 				<Text bold color="red">
 					🔒 Access Locked
