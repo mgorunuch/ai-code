@@ -1,9 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { Box, Text, useInput, useApp } from 'ink';
-import { Settings } from './Settings';
-import { MainMenu } from './MainMenu';
+import { MainMenu } from './main-menu.ui';
+import { SettingsPage } from './settings-page.ui';
+import { MainAppPage } from './main-app-page.ui';
 import { Help } from './Help';
-import { AgentDashboard, AgentCommunicationWidget } from './AgentDashboard';
+import { AgentDashboard } from './AgentDashboard';
 import { MasterPasswordPrompt } from './master-password-prompt.ui';
 import { OrchestratorProvider } from './OrchestratorProvider';
 
@@ -35,18 +36,14 @@ function AppContent({ name = 'Stranger' }: Props) {
 	const { exit } = useApp();
 
 	useInput((input, key) => {
-		// Global escape to return to menu from any state (except auth, which handles its own exit)
+		// Global escape to return to menu from any state (except auth and app, which handle their own navigation)
 		if (
 			key.escape &&
 			appState !== AppState.Menu &&
-			appState !== AppState.Auth
+			appState !== AppState.Auth &&
+			appState !== AppState.App
 		) {
 			setAppState(AppState.Menu);
-		}
-
-		// Quick settings access from main app
-		if (appState === AppState.App && input === 's') {
-			setAppState(AppState.Settings);
 		}
 	});
 
@@ -96,17 +93,7 @@ function AppContent({ name = 'Stranger' }: Props) {
 			);
 
 		case AppState.Settings:
-			return (
-				<Box flexDirection="column">
-					<Text bold color="cyan">
-						Settings Menu
-					</Text>
-					<Text dimColor>Press ESC to return to main menu</Text>
-					<Box marginTop={1}>
-						<Settings onExit={handleBackToMenu} />
-					</Box>
-				</Box>
-			);
+			return <SettingsPage onBack={handleBackToMenu} />;
 
 		case AppState.Help:
 			return <Help onBack={handleBackToMenu} />;
@@ -116,21 +103,11 @@ function AppContent({ name = 'Stranger' }: Props) {
 
 		case AppState.App:
 			return (
-				<Box flexDirection="column">
-					<Text>
-						Hello, <Text color="green">{name}</Text>
-					</Text>
-					<Text>Welcome to the main application!</Text>
-
-					<Box marginTop={1}>
-						<AgentCommunicationWidget compact height={15} />
-					</Box>
-
-					<Box marginTop={1}>
-						<Text dimColor>Press 's' to open settings</Text>
-						<Text dimColor>Press ESC to return to main menu</Text>
-					</Box>
-				</Box>
+				<MainAppPage
+					name={name}
+					onOpenSettings={handleOpenSettings}
+					onBack={handleBackToMenu}
+				/>
 			);
 
 		default:
